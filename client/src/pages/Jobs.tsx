@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +9,7 @@ import { JobTimeline } from "@/components/jobs/JobTimeline";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Search,
   Filter,
@@ -15,16 +17,17 @@ import {
   Phone,
   Mail,
   Calendar,
-  DollarSign,
   Package,
   FileText,
   Camera,
+  Briefcase,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { Job, Client, ProductionTask } from "@shared/schema";
 
 type JobStatus = "in_progress" | "production" | "ready" | "scheduled" | "complete";
 
-interface Job {
+interface DisplayJob {
   id: string;
   jobNumber: string;
   clientName: string;
@@ -49,99 +52,147 @@ interface Job {
 export default function Jobs() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
-  // todo: remove mock functionality
-  const jobs: Job[] = [
-    {
-      id: "job-001",
-      jobNumber: "JOB-2024-089",
-      clientName: "Williams Family",
-      clientPhone: "0412 345 678",
-      clientEmail: "williams@email.com",
-      address: "42 Ocean Drive, Scarborough WA 6019",
-      fenceStyle: "Hampton Style - 1.8m height, 25m length",
-      jobType: "supply_install",
-      status: "production",
-      productionProgress: 65,
-      scheduledDate: "Wed, 11 Dec 2024",
-      installer: { name: "Jake Morrison", initials: "JM" },
-      totalValue: 8500,
-      depositPaid: true,
-      depositAmount: 4250,
-      balanceDue: 4250,
-    },
-    {
-      id: "job-002",
-      jobNumber: "JOB-2024-091",
-      clientName: "Harbor Homes",
-      clientPhone: "08 9234 5678",
-      clientEmail: "info@harborhomes.com.au",
-      address: "22 Marina Bay, Fremantle WA 6160",
-      fenceStyle: "Colonial - 60m development project",
-      jobType: "supply",
-      status: "in_progress",
-      productionProgress: 30,
-      totalValue: 24500,
-      depositPaid: true,
-      depositAmount: 12250,
-      balanceDue: 12250,
-    },
-    {
-      id: "job-003",
-      jobNumber: "JOB-2024-087",
-      clientName: "Pacific Builders",
-      clientPhone: "08 9123 4567",
-      clientEmail: "orders@pacificbuilders.com.au",
-      address: "15 Industrial Way, Malaga WA 6090",
-      fenceStyle: "Picket Style - Trade order",
-      jobType: "supply",
-      status: "ready",
-      productionProgress: 100,
-      totalValue: 6200,
-      depositPaid: true,
-      depositAmount: 3100,
-      balanceDue: 3100,
-    },
-    {
-      id: "job-004",
-      jobNumber: "JOB-2024-093",
-      clientName: "Coastal Living",
-      clientPhone: "0423 456 789",
-      clientEmail: "coastal@email.com",
-      address: "8 Sunset Blvd, Cottesloe WA 6011",
-      fenceStyle: "Nautilus - 35m premium",
-      jobType: "supply_install",
-      status: "scheduled",
-      productionProgress: 100,
-      scheduledDate: "Mon, 9 Dec 2024",
-      installer: { name: "Jarrad K", initials: "JK" },
-      totalValue: 12800,
-      depositPaid: true,
-      depositAmount: 6400,
-      balanceDue: 6400,
-    },
-  ];
+  const { data: jobs = [], isLoading: jobsLoading } = useQuery<Job[]>({
+    queryKey: ["/api/jobs"],
+  });
 
-  // todo: remove mock functionality
-  const timelineEvents = [
-    { id: "1", title: "Quote Accepted", description: "Client approved quote and paid deposit", date: "28 Nov", status: "complete" as const },
-    { id: "2", title: "Production Started", description: "Materials allocated, cutting commenced", date: "30 Nov", status: "complete" as const },
-    { id: "3", title: "Cutting Complete", description: "All posts and rails cut to size", date: "2 Dec", status: "complete" as const },
-    { id: "4", title: "Assembly In Progress", description: "Panels being assembled", date: "4 Dec", status: "current" as const },
-    { id: "5", title: "QA Check", date: "5 Dec", status: "pending" as const },
-    { id: "6", title: "Ready for Install", date: "6 Dec", status: "pending" as const },
-    { id: "7", title: "Installation", description: "Scheduled with Jake M", date: "11 Dec", status: "pending" as const },
-  ];
+  const { data: clients = [] } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
 
-  const filteredJobs = jobs.filter(
+  const { data: productionTasks = [] } = useQuery<ProductionTask[]>({
+    queryKey: ["/api/production-tasks"],
+  });
+
+  const getClientInfo = (clientId: string | null) => {
+    if (!clientId) return { name: "Unknown", phone: "", email: "" };
+    const client = clients.find(c => c.id === clientId);
+    return {
+      name: client?.name || "Unknown",
+      phone: client?.phone || "",
+      email: client?.email || "",
+    };
+  };
+
+  const calculateProgress = (jobId: string): number => {
+    const jobTasks = productionTasks.filter(t => t.jobId === jobId);
+    if (jobTasks.length === 0) return 0;
+    const completed = jobTasks.filter(t => t.status === "completed").length;
+    return Math.round((completed / jobTasks.length) * 100);
+  };
+
+  const mapJobStatus = (status: string): JobStatus => {
+    switch (status) {
+      case "pending_deposit":
+      case "deposit_received":
+        return "in_progress";
+      case "manufacturing_posts":
+      case "manufacturing_panels":
+      case "manufacturing_gates":
+      case "qa_check":
+        return "production";
+      case "ready_for_scheduling":
+      case "ready_for_pickup":
+        return "ready";
+      case "scheduled":
+        return "scheduled";
+      case "install_in_progress":
+      case "install_complete":
+      case "final_payment_pending":
+      case "completed":
+        return "complete";
+      default:
+        return "in_progress";
+    }
+  };
+
+  const displayJobs: DisplayJob[] = jobs.map((job) => {
+    const clientInfo = getClientInfo(job.clientId);
+    const totalValue = parseFloat(job.totalAmount);
+    const depositAmount = parseFloat(job.depositAmount || "0");
+    
+    return {
+      id: job.id,
+      jobNumber: job.jobNumber,
+      clientName: clientInfo.name,
+      clientPhone: clientInfo.phone,
+      clientEmail: clientInfo.email,
+      address: job.siteAddress,
+      fenceStyle: `${job.fenceStyle || "Unknown"} - ${job.fenceHeight}mm, ${job.totalLength}m`,
+      jobType: job.jobType === "supply_install" ? "supply_install" : "supply",
+      status: mapJobStatus(job.status),
+      productionProgress: calculateProgress(job.id),
+      scheduledDate: job.scheduledStartDate 
+        ? new Date(job.scheduledStartDate).toLocaleDateString("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric" })
+        : undefined,
+      installer: job.assignedInstaller ? { name: "Installer", initials: "IN" } : undefined,
+      totalValue,
+      depositPaid: job.depositPaid || false,
+      depositAmount,
+      balanceDue: totalValue - depositAmount,
+    };
+  });
+
+  const selectedJob = displayJobs.find(j => j.id === selectedJobId) || null;
+
+  const jobTasks = selectedJob 
+    ? productionTasks.filter(t => t.jobId === selectedJob.id)
+    : [];
+
+  const timelineEvents = selectedJob ? [
+    { 
+      id: "1", 
+      title: "Quote Accepted", 
+      description: "Client approved quote and paid deposit", 
+      date: "Started",
+      status: (selectedJob.depositPaid ? "complete" : "pending") as "complete" | "current" | "pending"
+    },
+    { 
+      id: "2", 
+      title: "Cutting", 
+      description: "Posts and rails cut to size",
+      date: "",
+      status: getTaskStatus(jobTasks, "cutting")
+    },
+    { 
+      id: "3", 
+      title: "Routing", 
+      description: "Routing and shaping completed",
+      date: "",
+      status: getTaskStatus(jobTasks, "routing")
+    },
+    { 
+      id: "4", 
+      title: "Assembly", 
+      description: "Panels being assembled",
+      date: "",
+      status: getTaskStatus(jobTasks, "assembly")
+    },
+    { 
+      id: "5", 
+      title: "QA Check", 
+      description: "Quality assurance inspection",
+      date: "",
+      status: getTaskStatus(jobTasks, "qa")
+    },
+    { 
+      id: "6", 
+      title: "Ready for Install/Pickup", 
+      date: "",
+      status: (selectedJob.status === "ready" || selectedJob.status === "scheduled" || selectedJob.status === "complete" ? "complete" : "pending") as "complete" | "current" | "pending"
+    },
+  ] : [];
+
+  const filteredJobs = displayJobs.filter(
     (job) =>
       job.jobNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       job.clientName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleJobClick = (job: Job) => {
-    setSelectedJob(job);
+  const handleJobClick = (job: DisplayJob) => {
+    setSelectedJobId(job.id);
   };
 
   return (
@@ -168,20 +219,33 @@ export default function Jobs() {
         </div>
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-3">
-            {filteredJobs.map((job) => (
-              <div
-                key={job.id}
-                className={`cursor-pointer ${selectedJob?.id === job.id ? "ring-2 ring-accent rounded-md" : ""}`}
-                onClick={() => handleJobClick(job)}
-              >
-                <JobCard
-                  job={job}
-                  onUpdateStatus={() => toast({ title: "Status updated" })}
-                  onViewMaterials={() => toast({ title: "Materials view" })}
-                  onViewSchedule={() => toast({ title: "Schedule view" })}
-                />
+            {jobsLoading ? (
+              <>
+                <Skeleton className="h-32" />
+                <Skeleton className="h-32" />
+                <Skeleton className="h-32" />
+              </>
+            ) : (
+              filteredJobs.map((job) => (
+                <div
+                  key={job.id}
+                  className={`cursor-pointer ${selectedJobId === job.id ? "ring-2 ring-accent rounded-md" : ""}`}
+                  onClick={() => handleJobClick(job)}
+                >
+                  <JobCard
+                    job={job}
+                    onUpdateStatus={() => toast({ title: "Status updated" })}
+                    onViewMaterials={() => toast({ title: "Materials view" })}
+                    onViewSchedule={() => toast({ title: "Schedule view" })}
+                  />
+                </div>
+              ))
+            )}
+            {!jobsLoading && filteredJobs.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-sm">No jobs found</p>
               </div>
-            ))}
+            )}
           </div>
         </ScrollArea>
       </div>
@@ -225,11 +289,11 @@ export default function Jobs() {
                     <CardContent className="space-y-3">
                       <div className="flex items-center gap-2 text-sm">
                         <Phone className="h-4 w-4 text-muted-foreground" />
-                        <span>{selectedJob.clientPhone}</span>
+                        <span>{selectedJob.clientPhone || "No phone"}</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm">
                         <Mail className="h-4 w-4 text-muted-foreground" />
-                        <span>{selectedJob.clientEmail}</span>
+                        <span>{selectedJob.clientEmail || "No email"}</span>
                       </div>
                       <div className="flex items-start gap-2 text-sm">
                         <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -248,10 +312,10 @@ export default function Jobs() {
                         <span className="font-semibold">${selectedJob.totalValue.toLocaleString()}</span>
                       </div>
                       <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Deposit Paid</span>
+                        <span className="text-muted-foreground">Deposit</span>
                         <div className="flex items-center gap-2">
                           <span className="font-medium">${selectedJob.depositAmount.toLocaleString()}</span>
-                          <StatusBadge status="paid" />
+                          <StatusBadge status={selectedJob.depositPaid ? "paid" : "pending"} />
                         </div>
                       </div>
                       <div className="flex items-center justify-between text-sm border-t pt-3">
@@ -322,24 +386,20 @@ export default function Jobs() {
                   <CardContent>
                     <div className="space-y-2">
                       <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-sm">PVC Post 100x100 - 2.4m</span>
-                        <span className="font-mono text-sm">x 6</span>
+                        <span className="text-sm">PVC Post 90x90 - 2.4m</span>
+                        <span className="font-mono text-sm">x 15</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-sm">PVC Rail 50x100 - 2.4m</span>
-                        <span className="font-mono text-sm">x 12</span>
-                      </div>
-                      <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-sm">PVC Picket Hampton - 1.8m</span>
+                        <span className="text-sm">PVC Rail 65x40 - 3.0m</span>
                         <span className="font-mono text-sm">x 48</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-sm">PVC Post Cap White</span>
-                        <span className="font-mono text-sm">x 6</span>
+                        <span className="text-sm">PVC Picket 65x16 - 1.5m</span>
+                        <span className="font-mono text-sm">x 180</span>
                       </div>
                       <div className="flex items-center justify-between p-2 bg-muted rounded">
-                        <span className="text-sm">Stainless Steel Screws</span>
-                        <span className="font-mono text-sm">x 200</span>
+                        <span className="text-sm">Post Cap 90mm</span>
+                        <span className="font-mono text-sm">x 15</span>
                       </div>
                     </div>
                   </CardContent>
@@ -360,8 +420,8 @@ export default function Jobs() {
                         <div className="flex items-center gap-3">
                           <FileText className="h-5 w-5 text-muted-foreground" />
                           <div>
-                            <p className="text-sm font-medium">Quote_JOB-2024-089.pdf</p>
-                            <p className="text-xs text-muted-foreground">28 Nov 2024</p>
+                            <p className="text-sm font-medium">Quote_{selectedJob.jobNumber}.pdf</p>
+                            <p className="text-xs text-muted-foreground">Approved Quote</p>
                           </div>
                         </div>
                         <Button variant="ghost" size="sm">Download</Button>
@@ -371,7 +431,7 @@ export default function Jobs() {
                           <FileText className="h-5 w-5 text-muted-foreground" />
                           <div>
                             <p className="text-sm font-medium">Deposit_Invoice.pdf</p>
-                            <p className="text-xs text-muted-foreground">28 Nov 2024</p>
+                            <p className="text-xs text-muted-foreground">Deposit Invoice</p>
                           </div>
                         </div>
                         <Button variant="ghost" size="sm">Download</Button>
@@ -413,4 +473,10 @@ export default function Jobs() {
   );
 }
 
-import { Briefcase } from "lucide-react";
+function getTaskStatus(tasks: ProductionTask[], taskType: string): "complete" | "current" | "pending" {
+  const task = tasks.find(t => t.taskType === taskType);
+  if (!task) return "pending";
+  if (task.status === "completed") return "complete";
+  if (task.status === "in_progress") return "current";
+  return "pending";
+}

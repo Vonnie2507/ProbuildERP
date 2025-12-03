@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TaskQueue } from "@/components/production/TaskQueue";
 import { StatCard } from "@/components/shared/StatCard";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Scissors,
   Router,
@@ -15,11 +16,13 @@ import {
   Users,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { ProductionTask as DBProductionTask, Job } from "@shared/schema";
 
 type TaskType = "cutting" | "routing" | "assembly" | "qa";
 type TaskStatus = "pending" | "in_progress" | "complete";
 
-interface ProductionTask {
+interface DisplayTask {
   id: string;
   jobNumber: string;
   clientName: string;
@@ -34,86 +37,86 @@ interface ProductionTask {
 export default function Production() {
   const { toast } = useToast();
 
-  // todo: remove mock functionality
-  const [tasks, setTasks] = useState<ProductionTask[]>([
-    {
-      id: "task-001",
-      jobNumber: "JOB-2024-089",
-      clientName: "Williams Family - Hampton 25m",
-      taskType: "cutting",
-      status: "in_progress",
-      assignedTo: "George",
-      estimatedTime: 120,
-      timeSpent: 45,
-      materials: ["PVC Post 100x100 x 6", "PVC Rail 50x100 x 12", "PVC Picket x 48"],
-    },
-    {
-      id: "task-002",
-      jobNumber: "JOB-2024-091",
-      clientName: "Harbor Homes - Colonial 60m",
-      taskType: "cutting",
-      status: "pending",
-      estimatedTime: 180,
-      timeSpent: 0,
-      materials: ["PVC Post 125x125 x 15", "PVC Rail 50x100 x 30"],
-    },
-    {
-      id: "task-003",
-      jobNumber: "JOB-2024-088",
-      clientName: "Coastal Living - Nautilus 35m",
-      taskType: "routing",
-      status: "in_progress",
-      assignedTo: "David T",
-      estimatedTime: 90,
-      timeSpent: 60,
-      materials: ["Pre-cut rails x 20", "Router bits set"],
-    },
-    {
-      id: "task-004",
-      jobNumber: "JOB-2024-086",
-      clientName: "Johnson Property - Picket 15m",
-      taskType: "assembly",
-      status: "pending",
-      estimatedTime: 150,
-      timeSpent: 0,
-      materials: ["Routed panels x 8", "Hardware kit"],
-    },
-    {
-      id: "task-005",
-      jobNumber: "JOB-2024-085",
-      clientName: "Pacific Builders - Trade Order",
-      taskType: "qa",
-      status: "pending",
-      estimatedTime: 30,
-      timeSpent: 0,
-      materials: ["Assembled panels x 12"],
-    },
-  ]);
+  const { data: productionTasks = [], isLoading: tasksLoading } = useQuery<DBProductionTask[]>({
+    queryKey: ["/api/production-tasks"],
+  });
 
-  const handleStartTask = (task: ProductionTask) => {
-    setTasks(tasks.map(t => 
-      t.id === task.id ? { ...t, status: "in_progress" as TaskStatus, assignedTo: "George" } : t
-    ));
+  const { data: jobs = [] } = useQuery<Job[]>({
+    queryKey: ["/api/jobs"],
+  });
+
+  const updateTaskMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<DBProductionTask> }) => {
+      return apiRequest("PATCH", `/api/production-tasks/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/production-tasks"] });
+    },
+  });
+
+  const getJobInfo = (jobId: string | null) => {
+    if (!jobId) return { jobNumber: "Unknown", clientName: "Unknown" };
+    const job = jobs.find(j => j.id === jobId);
+    return {
+      jobNumber: job?.jobNumber || "Unknown",
+      clientName: `${job?.fenceStyle || "Unknown"} - ${job?.totalLength || "?"}m`,
+    };
+  };
+
+  const mapTaskStatus = (status: string): TaskStatus => {
+    if (status === "completed") return "complete";
+    if (status === "in_progress") return "in_progress";
+    return "pending";
+  };
+
+  const tasks: DisplayTask[] = productionTasks.map((task) => {
+    const jobInfo = getJobInfo(task.jobId);
+    return {
+      id: task.id,
+      jobNumber: jobInfo.jobNumber,
+      clientName: jobInfo.clientName,
+      taskType: task.taskType as TaskType,
+      status: mapTaskStatus(task.status),
+      assignedTo: task.assignedTo || undefined,
+      estimatedTime: 120,
+      timeSpent: task.timeSpentMinutes || 0,
+      materials: [],
+    };
+  });
+
+  const handleStartTask = (task: DisplayTask) => {
+    updateTaskMutation.mutate({
+      id: task.id,
+      data: { 
+        status: "in_progress",
+        startTime: new Date(),
+      },
+    });
     toast({
       title: "Task Started",
       description: `Started ${task.taskType} for ${task.jobNumber}`,
     });
   };
 
-  const handlePauseTask = (task: ProductionTask) => {
-    setTasks(tasks.map(t => 
-      t.id === task.id ? { ...t, status: "pending" as TaskStatus } : t
-    ));
+  const handlePauseTask = (task: DisplayTask) => {
+    updateTaskMutation.mutate({
+      id: task.id,
+      data: { status: "pending" },
+    });
     toast({
       title: "Task Paused",
       description: `Paused ${task.taskType} for ${task.jobNumber}`,
     });
   };
 
-  const handleCompleteTask = (task: ProductionTask) => {
-    setTasks(tasks.map(t => 
-      t.id === task.id ? { ...t, status: "complete" as TaskStatus, timeSpent: t.estimatedTime } : t
-    ));
+  const handleCompleteTask = (task: DisplayTask) => {
+    updateTaskMutation.mutate({
+      id: task.id,
+      data: { 
+        status: "completed",
+        endTime: new Date(),
+      },
+    });
     toast({
       title: "Task Completed",
       description: `Completed ${task.taskType} for ${task.jobNumber}`,
@@ -129,6 +132,26 @@ export default function Production() {
   const pendingTasks = tasks.filter(t => t.status === "pending").length;
   const completedToday = tasks.filter(t => t.status === "complete").length;
   const totalTime = tasks.reduce((acc, t) => acc + t.timeSpent, 0);
+
+  if (tasksLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <div className="grid grid-cols-4 gap-4">
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -185,7 +208,7 @@ export default function Production() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{cuttingTasks.length}</div>
-            <Progress value={cuttingTasks.filter(t => t.status === "complete").length / cuttingTasks.length * 100 || 0} className="h-1 mt-2" />
+            <Progress value={cuttingTasks.length > 0 ? (cuttingTasks.filter(t => t.status === "complete").length / cuttingTasks.length * 100) : 0} className="h-1 mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -197,7 +220,7 @@ export default function Production() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{routingTasks.length}</div>
-            <Progress value={routingTasks.filter(t => t.status === "complete").length / routingTasks.length * 100 || 0} className="h-1 mt-2" />
+            <Progress value={routingTasks.length > 0 ? (routingTasks.filter(t => t.status === "complete").length / routingTasks.length * 100) : 0} className="h-1 mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -209,7 +232,7 @@ export default function Production() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{assemblyTasks.length}</div>
-            <Progress value={assemblyTasks.filter(t => t.status === "complete").length / assemblyTasks.length * 100 || 0} className="h-1 mt-2" />
+            <Progress value={assemblyTasks.length > 0 ? (assemblyTasks.filter(t => t.status === "complete").length / assemblyTasks.length * 100) : 0} className="h-1 mt-2" />
           </CardContent>
         </Card>
         <Card>
@@ -221,7 +244,7 @@ export default function Production() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{qaTasks.length}</div>
-            <Progress value={qaTasks.filter(t => t.status === "complete").length / qaTasks.length * 100 || 0} className="h-1 mt-2" />
+            <Progress value={qaTasks.length > 0 ? (qaTasks.filter(t => t.status === "complete").length / qaTasks.length * 100) : 0} className="h-1 mt-2" />
           </CardContent>
         </Card>
       </div>

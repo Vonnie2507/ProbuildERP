@@ -1,153 +1,191 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { StatCard } from "@/components/shared/StatCard";
 import { PriorityList } from "@/components/dashboard/PriorityList";
 import { ScheduleSnapshot } from "@/components/dashboard/ScheduleSnapshot";
 import { ProductionOverview } from "@/components/dashboard/ProductionOverview";
 import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Users, FileText, Briefcase, DollarSign, Plus, RefreshCw } from "lucide-react";
+import type { Lead, Quote, Job, ScheduleEvent, ProductionTask, Product, Payment } from "@shared/schema";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
 
-  // todo: remove mock functionality
-  const stats = {
-    newLeads: 12,
-    activeQuotes: 24,
-    jobsInProgress: 18,
-    monthlyRevenue: 127500,
+  const { data: dashboardStats, isLoading: statsLoading, refetch: refetchStats } = useQuery<{
+    newLeadsCount: number;
+    quotesAwaitingFollowUp: number;
+    jobsInProduction: number;
+    jobsReadyForInstall: number;
+    todayInstalls: number;
+    pendingPaymentsTotal: number;
+  }>({
+    queryKey: ["/api/dashboard/stats"],
+  });
+
+  const { data: leads = [], isLoading: leadsLoading } = useQuery<Lead[]>({
+    queryKey: ["/api/leads"],
+  });
+
+  const { data: quotes = [], isLoading: quotesLoading } = useQuery<Quote[]>({
+    queryKey: ["/api/quotes"],
+  });
+
+  const { data: jobs = [], isLoading: jobsLoading } = useQuery<Job[]>({
+    queryKey: ["/api/jobs"],
+  });
+
+  const { data: scheduleEvents = [] } = useQuery<ScheduleEvent[]>({
+    queryKey: ["/api/schedule"],
+  });
+
+  const { data: productionTasks = [] } = useQuery<ProductionTask[]>({
+    queryKey: ["/api/production-tasks"],
+  });
+
+  const { data: lowStockProducts = [] } = useQuery<Product[]>({
+    queryKey: ["/api/products?lowStock=true"],
+  });
+
+  const { data: pendingPayments = [] } = useQuery<Payment[]>({
+    queryKey: ["/api/payments?pending=true"],
+  });
+
+  const handleRefresh = () => {
+    refetchStats();
   };
 
-  // todo: remove mock functionality
-  const priorityLeads = [
-    {
-      id: "1",
-      title: "Smith Residence",
-      subtitle: "Hampton Style - 25m fence",
-      status: "new" as const,
-      timeAgo: "2m ago",
-      urgent: true,
-    },
-    {
-      id: "2",
-      title: "Johnson Property",
-      subtitle: "Colonial - 40m with gate",
-      status: "contacted" as const,
-      timeAgo: "1h ago",
-    },
-    {
-      id: "3",
-      title: "Pacific Builders",
-      subtitle: "Picket Style - Trade order",
-      status: "quoted" as const,
-      timeAgo: "3h ago",
-    },
-  ];
+  const newLeads = leads.filter(l => l.stage === "new");
+  const quotesFollowUp = quotes.filter(q => q.status === "sent");
+  
+  const priorityLeads = newLeads.slice(0, 5).map((lead) => ({
+    id: lead.id,
+    title: lead.siteAddress?.split(",")[0] || "New Lead",
+    subtitle: `${lead.fenceStyle || "Unknown style"} - ${lead.fenceLength || "?"}m`,
+    status: lead.stage as "new" | "contacted" | "quoted" | "overdue",
+    timeAgo: formatTimeAgo(lead.createdAt),
+    urgent: lead.stage === "new",
+  }));
 
-  // todo: remove mock functionality
-  const quotesFollowUp = [
-    {
-      id: "4",
-      title: "Harbor Homes",
-      subtitle: "Quote sent 48hrs ago - $12,500",
-      status: "quoted" as const,
-      timeAgo: "48h",
-    },
-    {
-      id: "5",
-      title: "Coastal Living",
-      subtitle: "Quote sent 3 days ago - $8,200",
-      status: "overdue" as const,
-      timeAgo: "3d",
-    },
-  ];
+  const quotesFollowUpItems = quotesFollowUp.slice(0, 5).map((quote) => ({
+    id: quote.id,
+    title: quote.siteAddress?.split(",")[0] || `Quote ${quote.quoteNumber}`,
+    subtitle: `Quote sent - $${parseFloat(quote.totalAmount).toLocaleString()}`,
+    status: "quoted" as const,
+    timeAgo: quote.sentAt ? formatTimeAgo(quote.sentAt) : "",
+  }));
 
-  // todo: remove mock functionality
-  const scheduleItems = [
-    {
-      id: "1",
-      jobNumber: "JOB-2024-089",
-      clientName: "Williams Family",
-      address: "42 Ocean Drive, Scarborough",
-      installer: { name: "Jake M", initials: "JM" },
-      time: "8:00",
-      type: "install" as const,
-    },
-    {
-      id: "2",
-      jobNumber: "JOB-2024-091",
-      clientName: "Harbor Homes",
-      address: "15 Marina Bay, Fremantle",
-      installer: { name: "Jarrad K", initials: "JK" },
-      time: "10:30",
-      type: "delivery" as const,
-    },
-    {
-      id: "3",
-      jobNumber: "JOB-2024-093",
-      clientName: "Coastal Living",
-      address: "8 Sunset Blvd, Cottesloe",
-      installer: { name: "Jake M", initials: "JM" },
-      time: "14:00",
-      type: "measure" as const,
-    },
-  ];
+  const today = new Date();
+  const todayStart = new Date(today.setHours(0, 0, 0, 0));
+  const todayEnd = new Date(today.setHours(23, 59, 59, 999));
+  
+  const todayEvents = scheduleEvents
+    .filter(e => {
+      const eventDate = new Date(e.startDate);
+      return eventDate >= todayStart && eventDate <= todayEnd;
+    })
+    .slice(0, 5)
+    .map((event) => ({
+      id: event.id,
+      jobNumber: event.jobId ? `JOB-${event.jobId.slice(0, 8)}` : "",
+      clientName: event.title,
+      address: event.description || "",
+      installer: { 
+        name: event.assignedTo ? "Installer" : "Unassigned", 
+        initials: event.assignedTo ? "IN" : "UA" 
+      },
+      time: new Date(event.startDate).toLocaleTimeString("en-AU", { 
+        hour: "2-digit", 
+        minute: "2-digit",
+        hour12: false 
+      }),
+      type: event.eventType as "install" | "delivery" | "measure" | "pickup",
+    }));
 
-  // todo: remove mock functionality
   const productionStages = [
-    { stage: "cutting" as const, jobCount: 4, progress: 75 },
-    { stage: "routing" as const, jobCount: 3, progress: 60 },
-    { stage: "assembly" as const, jobCount: 5, progress: 40 },
-    { stage: "qa" as const, jobCount: 2, progress: 90 },
+    { 
+      stage: "cutting" as const, 
+      jobCount: productionTasks.filter(t => t.taskType === "cutting" && t.status !== "completed").length,
+      progress: calculateProgress(productionTasks, "cutting"),
+    },
+    { 
+      stage: "routing" as const, 
+      jobCount: productionTasks.filter(t => t.taskType === "routing" && t.status !== "completed").length,
+      progress: calculateProgress(productionTasks, "routing"),
+    },
+    { 
+      stage: "assembly" as const, 
+      jobCount: productionTasks.filter(t => t.taskType === "assembly" && t.status !== "completed").length,
+      progress: calculateProgress(productionTasks, "assembly"),
+    },
+    { 
+      stage: "qa" as const, 
+      jobCount: productionTasks.filter(t => t.taskType === "qa" && t.status !== "completed").length,
+      progress: calculateProgress(productionTasks, "qa"),
+    },
   ];
 
-  // todo: remove mock functionality
-  const [alerts, setAlerts] = useState([
-    {
-      id: "1",
+  const [alerts, setAlerts] = useState<Array<{
+    id: string;
+    type: "stock" | "overdue" | "payment" | "general";
+    title: string;
+    message: string;
+    actionLabel?: string;
+    onAction?: () => void;
+  }>>([]);
+
+  const dynamicAlerts = [
+    ...lowStockProducts.slice(0, 2).map((product, i) => ({
+      id: `stock-${product.id}`,
       type: "stock" as const,
       title: "Low Stock Alert",
-      message: "PVC Post Cap White - Only 12 remaining",
-      actionLabel: "Reorder Now",
+      message: `${product.name} - Only ${product.stockOnHand} remaining`,
+      actionLabel: "View Inventory",
       onAction: () => setLocation("/inventory"),
-    },
-    {
-      id: "2",
-      type: "overdue" as const,
-      title: "Quote Follow-up Overdue",
-      message: "Johnson Property - Quote sent 5 days ago",
-      actionLabel: "Contact Client",
-      onAction: () => setLocation("/leads"),
-    },
-    {
-      id: "3",
+    })),
+    ...pendingPayments.slice(0, 2).map((payment) => ({
+      id: `payment-${payment.id}`,
       type: "payment" as const,
-      title: "Deposit Pending",
-      message: "Smith Residence - Awaiting deposit for 3 days",
-    },
-  ]);
+      title: "Payment Pending",
+      message: `${payment.invoiceNumber || "Invoice"} - $${parseFloat(payment.amount).toLocaleString()} awaiting payment`,
+      actionLabel: "View Payment",
+      onAction: () => setLocation("/payments"),
+    })),
+  ];
 
   const handleDismissAlert = (id: string) => {
-    setAlerts(alerts.filter((a) => a.id !== id));
+    setAlerts(prev => prev.filter((a) => a.id !== id));
   };
 
-  const today = new Date().toLocaleDateString("en-AU", {
+  const todayFormatted = new Date().toLocaleDateString("en-AU", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
   });
 
+  const isLoading = statsLoading || leadsLoading || quotesLoading || jobsLoading;
+
+  const stats = {
+    newLeads: dashboardStats?.newLeadsCount || newLeads.length,
+    activeQuotes: dashboardStats?.quotesAwaitingFollowUp || quotesFollowUp.length,
+    jobsInProgress: dashboardStats?.jobsInProduction || jobs.filter(j => 
+      ["manufacturing_posts", "manufacturing_panels", "manufacturing_gates", "qa_check"].includes(j.status)
+    ).length,
+    pendingPayments: dashboardStats?.pendingPaymentsTotal || 0,
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold" data-testid="text-dashboard-title">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">{today}</p>
+          <p className="text-sm text-muted-foreground">{todayFormatted}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" data-testid="button-refresh">
+          <Button variant="outline" size="sm" onClick={handleRefresh} data-testid="button-refresh">
             <RefreshCw className="h-4 w-4 mr-2" />
             Refresh
           </Button>
@@ -159,33 +197,41 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          title="New Leads"
-          value={stats.newLeads}
-          description="Awaiting contact"
-          icon={Users}
-          trend={{ value: 8, isPositive: true }}
-        />
-        <StatCard
-          title="Active Quotes"
-          value={stats.activeQuotes}
-          description="Pending response"
-          icon={FileText}
-          trend={{ value: 12, isPositive: true }}
-        />
-        <StatCard
-          title="Jobs in Progress"
-          value={stats.jobsInProgress}
-          description="In production or scheduled"
-          icon={Briefcase}
-        />
-        <StatCard
-          title="Monthly Revenue"
-          value={`$${stats.monthlyRevenue.toLocaleString()}`}
-          description="This month"
-          icon={DollarSign}
-          trend={{ value: 15, isPositive: true }}
-        />
+        {isLoading ? (
+          <>
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+            <Skeleton className="h-32" />
+          </>
+        ) : (
+          <>
+            <StatCard
+              title="New Leads"
+              value={stats.newLeads}
+              description="Awaiting contact"
+              icon={Users}
+            />
+            <StatCard
+              title="Active Quotes"
+              value={stats.activeQuotes}
+              description="Pending response"
+              icon={FileText}
+            />
+            <StatCard
+              title="Jobs in Progress"
+              value={stats.jobsInProgress}
+              description="In production"
+              icon={Briefcase}
+            />
+            <StatCard
+              title="Pending Payments"
+              value={`$${stats.pendingPayments.toLocaleString()}`}
+              description="Awaiting payment"
+              icon={DollarSign}
+            />
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -194,21 +240,21 @@ export default function Dashboard() {
             <PriorityList
               title="New Leads"
               items={priorityLeads}
-              onItemClick={() => setLocation("/leads")}
+              onItemClick={(id) => setLocation(`/leads?id=${id}`)}
               onViewAll={() => setLocation("/leads")}
               emptyMessage="No new leads"
             />
             <PriorityList
               title="Quotes Awaiting Follow-Up"
-              items={quotesFollowUp}
-              onItemClick={() => setLocation("/leads")}
+              items={quotesFollowUpItems}
+              onItemClick={(id) => setLocation(`/leads?quote=${id}`)}
               onViewAll={() => setLocation("/leads")}
               emptyMessage="All quotes followed up"
             />
           </div>
           <ScheduleSnapshot
-            date={today}
-            items={scheduleItems}
+            date={todayFormatted}
+            items={todayEvents}
             onItemClick={() => setLocation("/schedule")}
             onViewSchedule={() => setLocation("/schedule")}
           />
@@ -216,12 +262,35 @@ export default function Dashboard() {
         <div className="space-y-6">
           <ProductionOverview
             stages={productionStages}
-            totalActiveJobs={14}
+            totalActiveJobs={productionTasks.filter(t => t.status !== "completed").length}
             onViewProduction={() => setLocation("/production")}
           />
-          <AlertsPanel alerts={alerts} onDismiss={handleDismissAlert} />
+          <AlertsPanel 
+            alerts={dynamicAlerts.length > 0 ? dynamicAlerts : alerts} 
+            onDismiss={handleDismissAlert} 
+          />
         </div>
       </div>
     </div>
   );
+}
+
+function formatTimeAgo(date: Date | string): string {
+  const now = new Date();
+  const then = new Date(date);
+  const diffMs = now.getTime() - then.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  return `${diffDays}d ago`;
+}
+
+function calculateProgress(tasks: ProductionTask[], taskType: string): number {
+  const typeTasks = tasks.filter(t => t.taskType === taskType);
+  if (typeTasks.length === 0) return 0;
+  const completed = typeTasks.filter(t => t.status === "completed").length;
+  return Math.round((completed / typeTasks.length) * 100);
 }

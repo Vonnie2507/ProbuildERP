@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CalendarView } from "@/components/schedule/CalendarView";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +23,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Plus, MapPin, Clock, Wrench, Truck, Package, Ruler } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import type { ScheduleEvent, Job, User } from "@shared/schema";
 
 type EventType = "install" | "delivery" | "pickup" | "measure";
 
@@ -48,66 +51,89 @@ export default function Schedule() {
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // todo: remove mock functionality
-  const events: CalendarEvent[] = [
-    {
-      id: "1",
-      jobNumber: "JOB-2024-089",
-      clientName: "Williams Family",
-      time: "8:00",
-      type: "install",
-      installer: "Jake M",
-      address: "42 Ocean Drive, Scarborough",
-    },
-    {
-      id: "2",
-      jobNumber: "JOB-2024-091",
-      clientName: "Harbor Homes",
-      time: "10:30",
-      type: "delivery",
-      address: "22 Marina Bay, Fremantle",
-    },
-    {
-      id: "3",
-      jobNumber: "JOB-2024-093",
-      clientName: "Coastal Living",
-      time: "14:00",
-      type: "measure",
-      installer: "Jake M",
-      address: "8 Sunset Blvd, Cottesloe",
-    },
-    {
-      id: "4",
-      jobNumber: "JOB-2024-094",
-      clientName: "Pacific Builders",
-      time: "9:00",
-      type: "pickup",
-      address: "Malaga Warehouse",
-    },
-    {
-      id: "5",
-      jobNumber: "JOB-2024-095",
-      clientName: "Johnson Property",
-      time: "11:00",
-      type: "install",
-      installer: "Jarrad K",
-      address: "15 Riverside Dr, Applecross",
-    },
-  ];
+  const { data: scheduleEvents = [], isLoading: eventsLoading } = useQuery<ScheduleEvent[]>({
+    queryKey: ["/api/schedule"],
+  });
 
-  // todo: remove mock functionality
-  const installers: Installer[] = [
-    { id: "1", name: "Jake Morrison", initials: "JM", todayJobs: 2, weekJobs: 8, available: true },
-    { id: "2", name: "Jarrad Kennedy", initials: "JK", todayJobs: 1, weekJobs: 6, available: true },
-    { id: "3", name: "Mike Thompson", initials: "MT", todayJobs: 0, weekJobs: 5, available: false },
-  ];
+  const { data: jobs = [] } = useQuery<Job[]>({
+    queryKey: ["/api/jobs"],
+  });
 
-  // todo: remove mock functionality
-  const pendingJobs = [
-    { id: "p1", jobNumber: "JOB-2024-096", clientName: "Smith Residence", readyDate: "5 Dec", type: "install" as const },
-    { id: "p2", jobNumber: "JOB-2024-097", clientName: "Trade Corp", readyDate: "6 Dec", type: "delivery" as const },
-    { id: "p3", jobNumber: "JOB-2024-098", clientName: "Beachside Homes", readyDate: "6 Dec", type: "install" as const },
-  ];
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const installerUsers = users.filter(u => u.role === "installer");
+
+  const getJobInfo = (jobId: string | null) => {
+    if (!jobId) return { jobNumber: "", clientName: "Event" };
+    const job = jobs.find(j => j.id === jobId);
+    return {
+      jobNumber: job?.jobNumber || "",
+      clientName: job?.siteAddress?.split(",")[0] || "Client",
+    };
+  };
+
+  const getInstallerName = (userId: string | null) => {
+    if (!userId) return undefined;
+    const user = users.find(u => u.id === userId);
+    return user ? `${user.firstName} ${user.lastName?.[0] || ""}` : undefined;
+  };
+
+  const events: CalendarEvent[] = scheduleEvents.map((event) => {
+    const jobInfo = getJobInfo(event.jobId);
+    return {
+      id: event.id,
+      jobNumber: jobInfo.jobNumber,
+      clientName: event.title || jobInfo.clientName,
+      time: new Date(event.startDate).toLocaleTimeString("en-AU", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }),
+      type: (event.eventType === "site_measure" ? "measure" : event.eventType) as EventType,
+      installer: getInstallerName(event.assignedTo),
+      address: event.description || "",
+    };
+  });
+
+  const installers: Installer[] = installerUsers.map((user) => {
+    const todayEvents = scheduleEvents.filter(e => {
+      const eventDate = new Date(e.startDate);
+      const today = new Date();
+      return e.assignedTo === user.id && 
+             eventDate.toDateString() === today.toDateString();
+    });
+
+    const weekEvents = scheduleEvents.filter(e => {
+      const eventDate = new Date(e.startDate);
+      const now = new Date();
+      const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+      return e.assignedTo === user.id && 
+             eventDate >= now && 
+             eventDate <= weekFromNow;
+    });
+
+    return {
+      id: user.id,
+      name: `${user.firstName} ${user.lastName}`,
+      initials: `${user.firstName?.[0] || ""}${user.lastName?.[0] || ""}`,
+      todayJobs: todayEvents.length,
+      weekJobs: weekEvents.length,
+      available: true,
+    };
+  });
+
+  const pendingJobs = jobs
+    .filter(j => j.status === "ready_for_scheduling")
+    .slice(0, 5)
+    .map((job) => ({
+      id: job.id,
+      jobNumber: job.jobNumber,
+      clientName: job.siteAddress?.split(",")[0] || "Client",
+      readyDate: new Date().toLocaleDateString("en-AU", { day: "numeric", month: "short" }),
+      type: job.jobType === "supply_only" ? "pickup" as const : "install" as const,
+    }));
 
   const handleEventClick = (event: CalendarEvent) => {
     setSelectedEvent(event);
@@ -129,6 +155,36 @@ export default function Schedule() {
       case "measure": return <Ruler className="h-4 w-4" />;
     }
   };
+
+  const todayEvents = events.filter(e => {
+    const event = scheduleEvents.find(se => se.id === e.id);
+    if (!event) return false;
+    const eventDate = new Date(event.startDate);
+    const today = new Date();
+    return eventDate.toDateString() === today.toDateString();
+  });
+
+  const todaySummary = {
+    installs: todayEvents.filter(e => e.type === "install").length,
+    deliveries: todayEvents.filter(e => e.type === "delivery").length,
+    pickups: todayEvents.filter(e => e.type === "pickup").length,
+    measures: todayEvents.filter(e => e.type === "measure").length,
+  };
+
+  if (eventsLoading) {
+    return (
+      <div className="flex h-[calc(100vh-3.5rem)]">
+        <div className="flex-1 p-6">
+          <Skeleton className="h-10 w-64 mb-6" />
+          <Skeleton className="h-[500px]" />
+        </div>
+        <div className="w-80 border-l p-4">
+          <Skeleton className="h-48 mb-4" />
+          <Skeleton className="h-64" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
@@ -159,30 +215,34 @@ export default function Schedule() {
             <CardTitle className="text-sm font-medium">Installers</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {installers.map((installer) => (
-              <div
-                key={installer.id}
-                className="flex items-center gap-3 p-2 rounded-md hover-elevate cursor-pointer"
-                data-testid={`installer-${installer.id}`}
-              >
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="text-xs bg-muted">
-                    {installer.initials}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{installer.name}</span>
-                    {!installer.available && (
-                      <Badge variant="secondary" className="text-[10px]">OFF</Badge>
-                    )}
+            {installers.length > 0 ? (
+              installers.map((installer) => (
+                <div
+                  key={installer.id}
+                  className="flex items-center gap-3 p-2 rounded-md hover-elevate cursor-pointer"
+                  data-testid={`installer-${installer.id}`}
+                >
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="text-xs bg-muted">
+                      {installer.initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{installer.name}</span>
+                      {!installer.available && (
+                        <Badge variant="secondary" className="text-[10px]">OFF</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Today: {installer.todayJobs} | Week: {installer.weekJobs}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Today: {installer.todayJobs} | Week: {installer.weekJobs}
-                  </p>
                 </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No installers found</p>
+            )}
           </CardContent>
         </Card>
 
@@ -193,23 +253,29 @@ export default function Schedule() {
           <CardContent>
             <ScrollArea className="h-64">
               <div className="space-y-2">
-                {pendingJobs.map((job) => (
-                  <div
-                    key={job.id}
-                    className="p-3 rounded-md border hover-elevate cursor-pointer"
-                    data-testid={`pending-job-${job.id}`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      {getEventIcon(job.type)}
-                      <span className="font-mono text-xs text-muted-foreground">{job.jobNumber}</span>
+                {pendingJobs.length > 0 ? (
+                  pendingJobs.map((job) => (
+                    <div
+                      key={job.id}
+                      className="p-3 rounded-md border hover-elevate cursor-pointer"
+                      data-testid={`pending-job-${job.id}`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        {getEventIcon(job.type)}
+                        <span className="font-mono text-xs text-muted-foreground">{job.jobNumber}</span>
+                      </div>
+                      <p className="text-sm font-medium">{job.clientName}</p>
+                      <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        <span>Ready: {job.readyDate}</span>
+                      </div>
                     </div>
-                    <p className="text-sm font-medium">{job.clientName}</p>
-                    <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
-                      <Clock className="h-3 w-3" />
-                      <span>Ready: {job.readyDate}</span>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No pending jobs to schedule
+                  </p>
+                )}
               </div>
             </ScrollArea>
           </CardContent>
@@ -225,28 +291,28 @@ export default function Schedule() {
                 <Wrench className="h-4 w-4 text-success" />
                 <span>Installs</span>
               </div>
-              <span className="font-semibold">2</span>
+              <span className="font-semibold">{todaySummary.installs}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
                 <Truck className="h-4 w-4 text-warning" />
                 <span>Deliveries</span>
               </div>
-              <span className="font-semibold">1</span>
+              <span className="font-semibold">{todaySummary.deliveries}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
                 <Package className="h-4 w-4 text-primary" />
                 <span>Pickups</span>
               </div>
-              <span className="font-semibold">1</span>
+              <span className="font-semibold">{todaySummary.pickups}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-2">
                 <Ruler className="h-4 w-4 text-accent" />
                 <span>Measures</span>
               </div>
-              <span className="font-semibold">1</span>
+              <span className="font-semibold">{todaySummary.measures}</span>
             </div>
           </CardContent>
         </Card>

@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { InventoryTable } from "@/components/inventory/InventoryTable";
 import { StatCard } from "@/components/shared/StatCard";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -21,8 +23,10 @@ import {
 } from "@/components/ui/select";
 import { Package, AlertTriangle, TrendingDown, DollarSign } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Product } from "@shared/schema";
 
-interface Product {
+interface DisplayProduct {
   id: string;
   sku: string;
   name: string;
@@ -36,31 +40,68 @@ interface Product {
 
 export default function Inventory() {
   const { toast } = useToast();
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<DisplayProduct | null>(null);
   const [isAdjustDialogOpen, setIsAdjustDialogOpen] = useState(false);
   const [adjustmentType, setAdjustmentType] = useState<"add" | "remove">("add");
   const [adjustmentQty, setAdjustmentQty] = useState("");
 
-  // todo: remove mock functionality
-  const products: Product[] = [
-    { id: "1", sku: "PVC-POST-100", name: "PVC Post 100x100 White", category: "Posts", stockOnHand: 45, reorderPoint: 20, costPrice: 85.00, sellPrice: 145.00, status: "in_stock" },
-    { id: "2", sku: "PVC-POST-125", name: "PVC Post 125x125 White", category: "Posts", stockOnHand: 12, reorderPoint: 15, costPrice: 120.00, sellPrice: 195.00, status: "low_stock" },
-    { id: "3", sku: "PVC-RAIL-50", name: "PVC Rail 50x100 White", category: "Rails", stockOnHand: 78, reorderPoint: 30, costPrice: 45.00, sellPrice: 75.00, status: "in_stock" },
-    { id: "4", sku: "PVC-PICK-HAM", name: "PVC Picket Hampton 1.8m", category: "Pickets", stockOnHand: 156, reorderPoint: 50, costPrice: 25.00, sellPrice: 42.00, status: "in_stock" },
-    { id: "5", sku: "PVC-PICK-COL", name: "PVC Picket Colonial 1.5m", category: "Pickets", stockOnHand: 8, reorderPoint: 40, costPrice: 22.00, sellPrice: 38.00, status: "low_stock" },
-    { id: "6", sku: "PVC-CAP-100", name: "PVC Post Cap 100mm White", category: "Caps", stockOnHand: 0, reorderPoint: 25, costPrice: 12.00, sellPrice: 22.00, status: "out_of_stock" },
-    { id: "7", sku: "PVC-CAP-125", name: "PVC Post Cap 125mm White", category: "Caps", stockOnHand: 34, reorderPoint: 20, costPrice: 15.00, sellPrice: 28.00, status: "in_stock" },
-    { id: "8", sku: "HW-SCREW-SS", name: "Stainless Steel Screws (100pk)", category: "Hardware", stockOnHand: 52, reorderPoint: 20, costPrice: 18.00, sellPrice: 32.00, status: "in_stock" },
-    { id: "9", sku: "HW-BRKT-STD", name: "Rail Bracket Standard", category: "Hardware", stockOnHand: 180, reorderPoint: 50, costPrice: 3.50, sellPrice: 6.50, status: "in_stock" },
-    { id: "10", sku: "GATE-SING-1.2", name: "Single Gate Kit 1.2m", category: "Gates", stockOnHand: 6, reorderPoint: 5, costPrice: 280.00, sellPrice: 450.00, status: "in_stock" },
-  ];
+  const { data: products = [], isLoading: productsLoading } = useQuery<Product[]>({
+    queryKey: ["/api/products"],
+  });
 
-  const totalProducts = products.length;
-  const lowStockCount = products.filter(p => p.status === "low_stock").length;
-  const outOfStockCount = products.filter(p => p.status === "out_of_stock").length;
-  const totalValue = products.reduce((acc, p) => acc + (p.stockOnHand * p.costPrice), 0);
+  const adjustStockMutation = useMutation({
+    mutationFn: async ({ productId, adjustment }: { productId: string; adjustment: number }) => {
+      return apiRequest("PATCH", `/api/products/${productId}/stock`, { adjustment });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      toast({
+        title: "Stock Updated",
+        description: "Inventory has been adjusted successfully.",
+      });
+      setIsAdjustDialogOpen(false);
+      setAdjustmentQty("");
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to adjust stock.",
+        variant: "destructive",
+      });
+      console.error("Stock adjustment error:", error);
+    },
+  });
 
-  const handleProductClick = (product: Product) => {
+  const displayProducts: DisplayProduct[] = products.map((product) => {
+    const stockOnHand = product.stockOnHand ?? 0;
+    const reorderPoint = product.reorderPoint ?? 10;
+    
+    let status: "in_stock" | "low_stock" | "out_of_stock" = "in_stock";
+    if (stockOnHand === 0) {
+      status = "out_of_stock";
+    } else if (stockOnHand <= reorderPoint) {
+      status = "low_stock";
+    }
+
+    return {
+      id: product.id,
+      sku: product.sku,
+      name: product.name,
+      category: product.category,
+      stockOnHand,
+      reorderPoint,
+      costPrice: parseFloat(product.costPrice) || 0,
+      sellPrice: parseFloat(product.sellPrice) || 0,
+      status,
+    };
+  });
+
+  const totalProducts = displayProducts.length;
+  const lowStockCount = displayProducts.filter(p => p.status === "low_stock").length;
+  const outOfStockCount = displayProducts.filter(p => p.status === "out_of_stock").length;
+  const totalValue = displayProducts.reduce((acc, p) => acc + (p.stockOnHand * p.costPrice), 0);
+
+  const handleProductClick = (product: DisplayProduct) => {
     setSelectedProduct(product);
     toast({
       title: "Product Selected",
@@ -68,19 +109,43 @@ export default function Inventory() {
     });
   };
 
-  const handleAdjustStock = (product: Product) => {
+  const handleAdjustStock = (product: DisplayProduct) => {
     setSelectedProduct(product);
     setIsAdjustDialogOpen(true);
   };
 
   const handleSubmitAdjustment = () => {
-    toast({
-      title: "Stock Adjusted",
-      description: `${adjustmentType === "add" ? "Added" : "Removed"} ${adjustmentQty} units`,
-    });
-    setIsAdjustDialogOpen(false);
-    setAdjustmentQty("");
+    if (!selectedProduct || !adjustmentQty) return;
+
+    const qty = parseInt(adjustmentQty);
+    if (isNaN(qty) || qty <= 0) {
+      toast({
+        title: "Invalid Quantity",
+        description: "Please enter a valid positive number.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const adjustment = adjustmentType === "add" ? qty : -qty;
+    adjustStockMutation.mutate({ productId: selectedProduct.id, adjustment });
   };
+
+  if (productsLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-8 w-48" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -129,7 +194,7 @@ export default function Inventory() {
 
         <TabsContent value="all" className="mt-6">
           <InventoryTable
-            products={products}
+            products={displayProducts}
             onProductClick={handleProductClick}
             onAdjustStock={handleAdjustStock}
             onAddProduct={() => toast({ title: "Add product" })}
@@ -138,7 +203,7 @@ export default function Inventory() {
 
         <TabsContent value="low_stock" className="mt-6">
           <InventoryTable
-            products={products.filter(p => p.status === "low_stock")}
+            products={displayProducts.filter(p => p.status === "low_stock")}
             onProductClick={handleProductClick}
             onAdjustStock={handleAdjustStock}
           />
@@ -146,7 +211,7 @@ export default function Inventory() {
 
         <TabsContent value="out_of_stock" className="mt-6">
           <InventoryTable
-            products={products.filter(p => p.status === "out_of_stock")}
+            products={displayProducts.filter(p => p.status === "out_of_stock")}
             onProductClick={handleProductClick}
             onAdjustStock={handleAdjustStock}
           />
@@ -193,8 +258,13 @@ export default function Inventory() {
                 <Button variant="outline" className="flex-1" onClick={() => setIsAdjustDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button className="flex-1" onClick={handleSubmitAdjustment} data-testid="button-submit-adjustment">
-                  Confirm
+                <Button 
+                  className="flex-1" 
+                  onClick={handleSubmitAdjustment} 
+                  disabled={adjustStockMutation.isPending}
+                  data-testid="button-submit-adjustment"
+                >
+                  {adjustStockMutation.isPending ? "Adjusting..." : "Confirm"}
                 </Button>
               </div>
             </div>

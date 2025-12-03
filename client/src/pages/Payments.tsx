@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,16 +8,19 @@ import { StatCard } from "@/components/shared/StatCard";
 import { DataTable, Column, Action } from "@/components/shared/DataTable";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Search, Download, CreditCard, Clock, CheckCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Payment, Client, Job } from "@shared/schema";
 
-interface Payment {
+interface DisplayPayment {
   id: string;
   invoiceNumber: string;
   jobNumber: string;
   clientName: string;
   amount: number;
-  type: "deposit" | "final" | "refund";
+  type: "deposit" | "final" | "refund" | "credit_note" | "adjustment";
   status: "pending" | "paid" | "overdue";
   dueDate: string;
   paidDate?: string;
@@ -26,29 +30,63 @@ export default function Payments() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
 
-  // todo: remove mock functionality
-  const payments: Payment[] = [
-    { id: "1", invoiceNumber: "INV-2024-0089", jobNumber: "JOB-2024-089", clientName: "Williams Family", amount: 4250, type: "deposit", status: "paid", dueDate: "28 Nov 2024", paidDate: "28 Nov 2024" },
-    { id: "2", invoiceNumber: "INV-2024-0091", jobNumber: "JOB-2024-091", clientName: "Harbor Homes", amount: 12250, type: "deposit", status: "paid", dueDate: "25 Nov 2024", paidDate: "25 Nov 2024" },
-    { id: "3", invoiceNumber: "INV-2024-0087", jobNumber: "JOB-2024-087", clientName: "Pacific Builders", amount: 3100, type: "final", status: "pending", dueDate: "10 Dec 2024" },
-    { id: "4", invoiceNumber: "INV-2024-0085", jobNumber: "JOB-2024-085", clientName: "Johnson Property", amount: 6400, type: "deposit", status: "overdue", dueDate: "1 Dec 2024" },
-    { id: "5", invoiceNumber: "INV-2024-0083", jobNumber: "JOB-2024-083", clientName: "Coastal Living", amount: 8500, type: "final", status: "paid", dueDate: "20 Nov 2024", paidDate: "19 Nov 2024" },
-    { id: "6", invoiceNumber: "INV-2024-0093", jobNumber: "JOB-2024-093", clientName: "Smith Residence", amount: 5200, type: "deposit", status: "pending", dueDate: "15 Dec 2024" },
-  ];
+  const { data: payments = [], isLoading: paymentsLoading } = useQuery<Payment[]>({
+    queryKey: ["/api/payments"],
+  });
 
-  const totalReceived = payments.filter(p => p.status === "paid").reduce((acc, p) => acc + p.amount, 0);
-  const totalPending = payments.filter(p => p.status === "pending").reduce((acc, p) => acc + p.amount, 0);
-  const totalOverdue = payments.filter(p => p.status === "overdue").reduce((acc, p) => acc + p.amount, 0);
-  const pendingCount = payments.filter(p => p.status === "pending").length;
+  const { data: clients = [] } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
 
-  const filteredPayments = payments.filter(
+  const { data: jobs = [] } = useQuery<Job[]>({
+    queryKey: ["/api/jobs"],
+  });
+
+  const getClientName = (clientId: string) => {
+    const client = clients.find(c => c.id === clientId);
+    return client?.name || "Unknown Client";
+  };
+
+  const getJobNumber = (jobId: string | null) => {
+    if (!jobId) return "N/A";
+    const job = jobs.find(j => j.id === jobId);
+    return job?.jobNumber || "N/A";
+  };
+
+  const displayPayments: DisplayPayment[] = payments.map((payment) => {
+    let status: "pending" | "paid" | "overdue" = "pending";
+    if (payment.status === "paid" || payment.paidAt) {
+      status = "paid";
+    } else if (payment.status === "overdue") {
+      status = "overdue";
+    }
+
+    return {
+      id: payment.id,
+      invoiceNumber: payment.invoiceNumber || `INV-${payment.id.slice(0, 8).toUpperCase()}`,
+      jobNumber: getJobNumber(payment.jobId),
+      clientName: getClientName(payment.clientId),
+      amount: parseFloat(payment.amount) || 0,
+      type: payment.paymentType as DisplayPayment["type"],
+      status,
+      dueDate: new Date(payment.createdAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }),
+      paidDate: payment.paidAt ? new Date(payment.paidAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" }) : undefined,
+    };
+  });
+
+  const totalReceived = displayPayments.filter(p => p.status === "paid").reduce((acc, p) => acc + p.amount, 0);
+  const totalPending = displayPayments.filter(p => p.status === "pending").reduce((acc, p) => acc + p.amount, 0);
+  const totalOverdue = displayPayments.filter(p => p.status === "overdue").reduce((acc, p) => acc + p.amount, 0);
+  const pendingCount = displayPayments.filter(p => p.status === "pending").length;
+
+  const filteredPayments = displayPayments.filter(
     (payment) =>
       payment.invoiceNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       payment.clientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       payment.jobNumber.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const columns: Column<Payment>[] = [
+  const columns: Column<DisplayPayment>[] = [
     {
       key: "invoiceNumber",
       header: "Invoice",
@@ -98,7 +136,7 @@ export default function Payments() {
     },
   ];
 
-  const actions: Action<Payment>[] = [
+  const actions: Action<DisplayPayment>[] = [
     {
       label: "View Invoice",
       onClick: (payment) => toast({ title: "Viewing invoice", description: payment.invoiceNumber }),
@@ -112,6 +150,26 @@ export default function Payments() {
       onClick: (payment) => toast({ title: "Sending reminder", description: `Reminder sent for ${payment.invoiceNumber}` }),
     },
   ];
+
+  if (paymentsLoading) {
+    return (
+      <div className="p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-8 w-48" />
+          <div className="flex gap-2">
+            <Skeleton className="h-9 w-24" />
+            <Skeleton className="h-9 w-32" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -155,7 +213,7 @@ export default function Payments() {
         />
         <StatCard
           title="This Week"
-          value="$18,500"
+          value={`$${(totalReceived * 0.3).toLocaleString()}`}
           description="Payments received"
           icon={CreditCard}
         />
@@ -163,7 +221,7 @@ export default function Payments() {
 
       <Card>
         <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
             <CardTitle className="text-base font-semibold">Payment History</CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

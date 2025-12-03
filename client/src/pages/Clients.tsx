@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,6 +8,7 @@ import { ClientCard } from "@/components/clients/ClientCard";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
   DialogContent,
@@ -26,19 +28,19 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Plus,
   Search,
-  Filter,
   Phone,
   Mail,
   MapPin,
   FileText,
   Briefcase,
   DollarSign,
-  Calendar,
   Users,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Client, Quote, Job, InsertClient } from "@shared/schema";
 
-interface Client {
+interface DisplayClient {
   id: string;
   name: string;
   phone: string;
@@ -56,80 +58,101 @@ interface Client {
 export default function Clients() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<"all" | "public" | "trade">("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    address: "",
+    clientType: "public" as "public" | "trade",
+    tradeDiscountLevel: "",
+    notes: "",
+  });
 
-  // todo: remove mock functionality
-  const clients: Client[] = [
-    {
-      id: "client-001",
-      name: "Pacific Builders Pty Ltd",
-      phone: "08 9123 4567",
-      email: "orders@pacificbuilders.com.au",
-      address: "15 Industrial Way, Malaga WA 6090",
-      clientType: "trade",
-      tradeDiscountLevel: 15,
-      totalQuotes: 24,
-      totalJobs: 18,
-      totalSpent: 156000,
-      notes: "Preferred trade partner. Regular orders every 2 weeks.",
-      createdAt: "Jan 2023",
-    },
-    {
-      id: "client-002",
-      name: "Harbor Homes Group",
-      phone: "08 9234 5678",
-      email: "info@harborhomes.com.au",
-      address: "22 Marina Bay, Fremantle WA 6160",
-      clientType: "trade",
-      tradeDiscountLevel: 10,
-      totalQuotes: 12,
-      totalJobs: 8,
-      totalSpent: 94500,
-      notes: "Development company. Large bulk orders.",
-      createdAt: "Mar 2023",
-    },
-    {
-      id: "client-003",
-      name: "Williams Family",
-      phone: "0412 345 678",
-      email: "williams@email.com",
-      address: "42 Ocean Drive, Scarborough WA 6019",
-      clientType: "public",
-      totalQuotes: 2,
-      totalJobs: 1,
-      totalSpent: 8500,
-      createdAt: "Nov 2024",
-    },
-    {
-      id: "client-004",
-      name: "Johnson Property Trust",
-      phone: "0423 456 789",
-      email: "j.johnson@email.com",
-      address: "8 Sunset Blvd, Cottesloe WA 6011",
-      clientType: "public",
-      totalQuotes: 1,
-      totalJobs: 0,
-      totalSpent: 0,
-      createdAt: "Nov 2024",
-    },
-    {
-      id: "client-005",
-      name: "Coastal Living Developments",
-      phone: "08 9345 6789",
-      email: "projects@coastalliving.com.au",
-      address: "100 Beach Road, City Beach WA 6015",
-      clientType: "trade",
-      tradeDiscountLevel: 12,
-      totalQuotes: 8,
-      totalJobs: 5,
-      totalSpent: 67800,
-      createdAt: "Jun 2023",
-    },
-  ];
+  const { data: clients = [], isLoading: clientsLoading } = useQuery<Client[]>({
+    queryKey: ["/api/clients"],
+  });
 
-  const filteredClients = clients.filter((client) => {
+  const { data: quotes = [] } = useQuery<Quote[]>({
+    queryKey: ["/api/quotes"],
+  });
+
+  const { data: jobs = [] } = useQuery<Job[]>({
+    queryKey: ["/api/jobs"],
+  });
+
+  const createClientMutation = useMutation({
+    mutationFn: async (data: InsertClient) => {
+      return apiRequest("POST", "/api/clients", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({
+        title: "Client Created",
+        description: "New client has been added successfully",
+      });
+      setIsDialogOpen(false);
+      resetForm();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create client",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      name: "",
+      phone: "",
+      email: "",
+      address: "",
+      clientType: "public",
+      tradeDiscountLevel: "",
+      notes: "",
+    });
+  };
+
+  const getDiscountPercent = (level: string | null): number | undefined => {
+    switch (level) {
+      case "gold": return 20;
+      case "silver": return 15;
+      case "bronze": return 10;
+      default: return undefined;
+    }
+  };
+
+  const displayClients: DisplayClient[] = clients.map((client) => {
+    const clientQuotes = quotes.filter(q => q.clientId === client.id);
+    const clientJobs = jobs.filter(j => j.clientId === client.id);
+    const completedStatuses = ["install_complete", "final_payment_pending", "completed"];
+    const totalSpent = clientJobs
+      .filter(j => completedStatuses.includes(j.status))
+      .reduce((sum, j) => sum + parseFloat(j.totalAmount), 0);
+
+    return {
+      id: client.id,
+      name: client.name,
+      phone: client.phone || "",
+      email: client.email || "",
+      address: client.address || "",
+      clientType: client.clientType as "public" | "trade",
+      tradeDiscountLevel: getDiscountPercent(client.tradeDiscountLevel),
+      totalQuotes: clientQuotes.length,
+      totalJobs: clientJobs.length,
+      totalSpent,
+      notes: client.notes || undefined,
+      createdAt: new Date(client.createdAt).toLocaleDateString("en-AU", { month: "short", year: "numeric" }),
+    };
+  });
+
+  const selectedClient = displayClients.find(c => c.id === selectedClientId) || null;
+
+  const filteredClients = displayClients.filter((client) => {
     const matchesSearch =
       client.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       client.email.toLowerCase().includes(searchQuery.toLowerCase());
@@ -138,18 +161,49 @@ export default function Clients() {
     return matchesSearch && matchesType;
   });
 
-  const handleClientClick = (client: Client) => {
-    setSelectedClient(client);
+  const handleClientClick = (client: DisplayClient) => {
+    setSelectedClientId(client.id);
   };
 
   const handleSubmitClient = (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: "Client Created",
-      description: "New client has been added successfully",
+    if (!formData.name || !formData.phone) {
+      toast({
+        title: "Error",
+        description: "Name and phone are required",
+        variant: "destructive",
+      });
+      return;
+    }
+    createClientMutation.mutate({
+      name: formData.name,
+      phone: formData.phone,
+      email: formData.email || undefined,
+      address: formData.address || undefined,
+      clientType: formData.clientType,
+      tradeDiscountLevel: formData.clientType === "trade" && formData.tradeDiscountLevel
+        ? (formData.tradeDiscountLevel as "gold" | "silver" | "bronze") 
+        : undefined,
+      notes: formData.notes || undefined,
     });
-    setIsDialogOpen(false);
   };
+
+  if (clientsLoading) {
+    return (
+      <div className="flex h-[calc(100vh-3.5rem)]">
+        <div className="w-96 border-r p-4">
+          <Skeleton className="h-10 w-full mb-4" />
+          <Skeleton className="h-10 w-full mb-4" />
+          <Skeleton className="h-24 mb-2" />
+          <Skeleton className="h-24 mb-2" />
+          <Skeleton className="h-24" />
+        </div>
+        <div className="flex-1 p-6">
+          <Skeleton className="h-full" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
@@ -171,26 +225,54 @@ export default function Clients() {
                 <form onSubmit={handleSubmitClient} className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">Client Name</Label>
-                    <Input id="name" placeholder="Enter name" data-testid="input-client-name" />
+                    <Input 
+                      id="name" 
+                      placeholder="Enter name" 
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      data-testid="input-client-name" 
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="phone">Phone</Label>
-                      <Input id="phone" placeholder="0400 000 000" data-testid="input-phone" />
+                      <Input 
+                        id="phone" 
+                        placeholder="0400 000 000" 
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        data-testid="input-phone" 
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
-                      <Input id="email" type="email" placeholder="email@example.com" data-testid="input-email" />
+                      <Input 
+                        id="email" 
+                        type="email" 
+                        placeholder="email@example.com" 
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        data-testid="input-email" 
+                      />
                     </div>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="address">Address</Label>
-                    <Input id="address" placeholder="Enter address" data-testid="input-address" />
+                    <Input 
+                      id="address" 
+                      placeholder="Enter address" 
+                      value={formData.address}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      data-testid="input-address" 
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="clientType">Client Type</Label>
-                      <Select defaultValue="public">
+                      <Select 
+                        value={formData.clientType}
+                        onValueChange={(value: "public" | "trade") => setFormData({ ...formData, clientType: value })}
+                      >
                         <SelectTrigger data-testid="select-client-type">
                           <SelectValue placeholder="Select type" />
                         </SelectTrigger>
@@ -200,20 +282,46 @@ export default function Clients() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="discount">Trade Discount %</Label>
-                      <Input id="discount" type="number" placeholder="0" data-testid="input-discount" />
-                    </div>
+                    {formData.clientType === "trade" && (
+                      <div className="space-y-2">
+                        <Label htmlFor="discount">Trade Level</Label>
+                        <Select 
+                          value={formData.tradeDiscountLevel}
+                          onValueChange={(value) => setFormData({ ...formData, tradeDiscountLevel: value })}
+                        >
+                          <SelectTrigger data-testid="select-discount">
+                            <SelectValue placeholder="Select level" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="bronze">Bronze (10%)</SelectItem>
+                            <SelectItem value="silver">Silver (15%)</SelectItem>
+                            <SelectItem value="gold">Gold (20%)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="notes">Notes</Label>
-                    <Textarea id="notes" placeholder="Add notes..." data-testid="textarea-notes" />
+                    <Textarea 
+                      id="notes" 
+                      placeholder="Add notes..." 
+                      value={formData.notes}
+                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                      data-testid="textarea-notes" 
+                    />
                   </div>
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit" data-testid="button-submit-client">Add Client</Button>
+                    <Button 
+                      type="submit" 
+                      disabled={createClientMutation.isPending}
+                      data-testid="button-submit-client"
+                    >
+                      {createClientMutation.isPending ? "Adding..." : "Add Client"}
+                    </Button>
                   </div>
                 </form>
               </DialogContent>
@@ -242,7 +350,7 @@ export default function Clients() {
             {filteredClients.map((client) => (
               <div
                 key={client.id}
-                className={`cursor-pointer ${selectedClient?.id === client.id ? "ring-2 ring-accent rounded-md" : ""}`}
+                className={`cursor-pointer ${selectedClientId === client.id ? "ring-2 ring-accent rounded-md" : ""}`}
                 onClick={() => handleClientClick(client)}
               >
                 <ClientCard
@@ -253,6 +361,11 @@ export default function Clients() {
                 />
               </div>
             ))}
+            {filteredClients.length === 0 && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p className="text-sm">No clients found</p>
+              </div>
+            )}
           </div>
         </ScrollArea>
       </div>
@@ -287,15 +400,15 @@ export default function Clients() {
                 <CardContent className="space-y-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span>{selectedClient.phone}</span>
+                    <span>{selectedClient.phone || "No phone"}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Mail className="h-4 w-4 text-muted-foreground" />
-                    <span>{selectedClient.email}</span>
+                    <span>{selectedClient.email || "No email"}</span>
                   </div>
                   <div className="flex items-start gap-2 text-sm">
                     <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                    <span>{selectedClient.address}</span>
+                    <span>{selectedClient.address || "No address"}</span>
                   </div>
                 </CardContent>
               </Card>
@@ -353,10 +466,27 @@ export default function Clients() {
               <TabsContent value="quotes" className="mt-6">
                 <Card>
                   <CardContent className="p-6">
-                    <div className="text-center py-8 text-muted-foreground">
-                      <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm">Quote history will appear here</p>
-                    </div>
+                    {quotes.filter(q => q.clientId === selectedClient.id).length > 0 ? (
+                      <div className="space-y-2">
+                        {quotes.filter(q => q.clientId === selectedClient.id).map((quote) => (
+                          <div key={quote.id} className="flex items-center justify-between p-3 border rounded hover-elevate cursor-pointer">
+                            <div>
+                              <p className="font-mono text-sm">{quote.quoteNumber}</p>
+                              <p className="text-sm text-muted-foreground">{quote.siteAddress}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold">${parseFloat(quote.totalAmount).toLocaleString()}</p>
+                              <StatusBadge status={quote.status} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <FileText className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                        <p className="text-sm">No quotes yet</p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -364,10 +494,27 @@ export default function Clients() {
               <TabsContent value="jobs" className="mt-6">
                 <Card>
                   <CardContent className="p-6">
-                    <div className="text-center py-8 text-muted-foreground">
-                      <Briefcase className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                      <p className="text-sm">Job history will appear here</p>
-                    </div>
+                    {jobs.filter(j => j.clientId === selectedClient.id).length > 0 ? (
+                      <div className="space-y-2">
+                        {jobs.filter(j => j.clientId === selectedClient.id).map((job) => (
+                          <div key={job.id} className="flex items-center justify-between p-3 border rounded hover-elevate cursor-pointer">
+                            <div>
+                              <p className="font-mono text-sm">{job.jobNumber}</p>
+                              <p className="text-sm text-muted-foreground">{job.siteAddress}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-semibold">${parseFloat(job.totalAmount).toLocaleString()}</p>
+                              <StatusBadge status={job.status} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-muted-foreground">
+                        <Briefcase className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                        <p className="text-sm">No jobs yet</p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
