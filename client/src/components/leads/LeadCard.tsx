@@ -13,7 +13,7 @@ import {
 
 interface Lead {
   id: string;
-  leadNumber?: string;
+  leadNumber: string;
   clientName: string;
   phone: string;
   email: string;
@@ -95,9 +95,7 @@ export function LeadCard({
 
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold">{lead.clientName}</h3>
-          {lead.leadNumber && (
-            <span className="text-xs font-mono text-muted-foreground">{lead.leadNumber}</span>
-          )}
+          <span className="text-xs font-mono text-muted-foreground">{lead.leadNumber}</span>
         </div>
         <p className="text-sm text-muted-foreground mb-3">{lead.fenceStyle}</p>
 

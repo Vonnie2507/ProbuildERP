@@ -79,7 +79,25 @@ All endpoints use `/api/` prefix:
 8. **Installer App**: Mobile-friendly installer interface
 9. **Trade Portal**: Self-service for trade clients
 
+## Hierarchical Numbering System
+The system uses a hierarchical numbering format that links leads, quotes, jobs, and invoices:
+- **Leads (Opportunities)**: Auto-generated sequential numbers in format `PVC-XXX` (e.g., PVC-001, PVC-002)
+- **Quotes**: Derived from lead number with quote sequence `PVC-XXX-Q#` (e.g., PVC-001-Q1, PVC-001-Q2)
+- **Jobs**: Derived from lead number with `-JOB` suffix `PVC-XXX-JOB` (e.g., PVC-001-JOB)
+- **Invoices**: One per job, derived from lead number with `-INV` suffix `PVC-XXX-INV` (e.g., PVC-001-INV)
+
+Each lead can have multiple quotes, but only one job and one invoice per job. The numbering is auto-generated:
+- `createLead()`: Generates next sequential lead number (PVC-001, PVC-002, etc.)
+- `createQuote()`: Counts existing quotes for the lead and generates next sequence (Q1, Q2, etc.)
+- `createJob()`: Generates job number and invoice number from the lead's number
+
 ## Recent Changes (December 2025)
+- **Hierarchical Numbering System** (NEW): Implemented linked numbering for leads, quotes, jobs, and invoices
+  - Leads auto-generated as PVC-XXX format
+  - Quotes linked to leads as PVC-XXX-Q# format (multiple per lead)
+  - Jobs derived as PVC-XXX-JOB format
+  - Invoices as PVC-XXX-INV format (one per job)
+  - UI updated: "Convert to Quote" replaced with "Create Quote" for clarity
 - **Global Search**: Added search API endpoint (`/api/search/global`) and GlobalSearch component in header with dropdown showing results across leads, quotes, and jobs
 - **Edit/Delete functionality**: Full CRUD operations for Clients, Leads, and Jobs including:
   - Edit dialogs with form validation

@@ -351,15 +351,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   private async generateLeadNumber(): Promise<string> {
-    const [result] = await db.select({ maxNumber: sql<string>`MAX(lead_number)` }).from(leads);
-    if (!result?.maxNumber) {
-      return 'PVC-001';
-    }
-    const match = result.maxNumber.match(/PVC-(\d+)/);
-    if (!match) {
-      return 'PVC-001';
-    }
-    const nextNum = parseInt(match[1], 10) + 1;
+    const [result] = await db.select({ 
+      maxNumber: sql<number>`COALESCE(MAX(CAST(SUBSTRING(lead_number FROM 5) AS INTEGER)), 0)` 
+    }).from(leads);
+    const nextNum = (result?.maxNumber || 0) + 1;
     return `PVC-${nextNum.toString().padStart(3, '0')}`;
   }
 
@@ -504,11 +499,12 @@ export class DatabaseStorage implements IStorage {
       return this.getNextQuoteNumber();
     }
     
-    const existingQuotes = await db.select({ count: sql<number>`count(*)` })
-      .from(quotes)
-      .where(eq(quotes.leadId, leadId));
-    const quoteSeq = (existingQuotes[0]?.count || 0) + 1;
-    return `${lead.leadNumber}-Q${quoteSeq}`;
+    const prefix = `${lead.leadNumber}-Q`;
+    const [result] = await db.select({ 
+      maxSeq: sql<number>`COALESCE(MAX(CAST(SUBSTRING(quote_number FROM ${prefix.length + 1}) AS INTEGER)), 0)` 
+    }).from(quotes).where(like(quotes.quoteNumber, `${prefix}%`));
+    const nextSeq = (result?.maxSeq || 0) + 1;
+    return `${prefix}${nextSeq}`;
   }
 
   async updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined> {

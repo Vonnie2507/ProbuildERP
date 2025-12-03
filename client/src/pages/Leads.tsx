@@ -46,7 +46,7 @@ type LeadStatus = "new" | "contacted" | "quoted" | "approved" | "declined";
 
 interface KanbanLead {
   id: string;
-  leadNumber?: string;
+  leadNumber: string;
   clientName: string;
   phone: string;
   email: string;
@@ -262,7 +262,7 @@ export default function Leads() {
 
   const kanbanLeads: KanbanLead[] = leads.map((lead) => ({
     id: lead.id,
-    leadNumber: lead.leadNumber || undefined,
+    leadNumber: lead.leadNumber,
     clientName: getClientName(lead.clientId),
     phone: getClientPhone(lead.clientId),
     email: getClientEmail(lead.clientId),
@@ -648,7 +648,14 @@ export default function Leads() {
         <DialogContent className="sm:max-w-2xl max-h-[90vh]">
           <DialogHeader>
             <div className="flex items-center justify-between">
-              <DialogTitle className="text-xl">Lead Details</DialogTitle>
+              <DialogTitle className="text-xl flex items-center gap-2">
+                Lead Details
+                {selectedLead?.leadNumber && (
+                  <span className="text-base font-mono text-muted-foreground">
+                    {selectedLead.leadNumber}
+                  </span>
+                )}
+              </DialogTitle>
             </div>
             <DialogDescription>
               View lead information and associated quotes

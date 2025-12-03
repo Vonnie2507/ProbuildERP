@@ -10,7 +10,7 @@ type LeadStatus = "new" | "contacted" | "quoted" | "approved" | "declined";
 
 interface Lead {
   id: string;
-  leadNumber?: string;
+  leadNumber: string;
   clientName: string;
   phone: string;
   email: string;

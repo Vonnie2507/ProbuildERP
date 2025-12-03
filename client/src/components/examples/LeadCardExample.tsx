@@ -3,6 +3,7 @@ import { LeadCard } from "@/components/leads/LeadCard";
 export default function LeadCardExample() {
   const lead = {
     id: "lead-001",
+    leadNumber: "PVC-001",
     clientName: "Sarah Mitchell",
     phone: "0412 345 678",
     email: "sarah.mitchell@email.com",
