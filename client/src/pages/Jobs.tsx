@@ -60,6 +60,7 @@ type JobStatus = "in_progress" | "production" | "ready" | "scheduled" | "complet
 interface DisplayJob {
   id: string;
   jobNumber: string;
+  invoiceNumber?: string;
   clientName: string;
   clientPhone: string;
   clientEmail: string;
@@ -222,6 +223,7 @@ export default function Jobs() {
     return {
       id: job.id,
       jobNumber: job.jobNumber,
+      invoiceNumber: job.invoiceNumber || undefined,
       clientName: clientInfo.name,
       clientPhone: clientInfo.phone,
       clientEmail: clientInfo.email,
@@ -370,7 +372,12 @@ export default function Jobs() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-3 mb-2">
-                  <span className="font-mono text-sm text-muted-foreground">{selectedJob.jobNumber}</span>
+                  <span className="font-mono text-sm text-muted-foreground" data-testid="text-job-number">{selectedJob.jobNumber}</span>
+                  {selectedJob.invoiceNumber && (
+                    <span className="font-mono text-sm text-muted-foreground" data-testid="text-invoice-number">
+                      {selectedJob.invoiceNumber}
+                    </span>
+                  )}
                   <StatusBadge status={selectedJob.status} />
                   <Badge variant="secondary">
                     {selectedJob.jobType === "supply_install" ? "Supply + Install" : "Supply Only"}
