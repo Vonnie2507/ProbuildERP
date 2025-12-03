@@ -15,7 +15,18 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -35,6 +46,8 @@ import {
   Briefcase,
   DollarSign,
   Users,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -61,6 +74,9 @@ export default function Clients() {
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<"all" | "public" | "trade">("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     phone: "",
@@ -104,6 +120,91 @@ export default function Clients() {
       });
     },
   });
+
+  const updateClientMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<InsertClient> }) => {
+      return apiRequest("PATCH", `/api/clients/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({
+        title: "Client Updated",
+        description: "Client information has been updated",
+      });
+      setIsEditDialogOpen(false);
+      setEditingClient(null);
+      resetForm();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update client",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteClientMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/clients/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+      toast({
+        title: "Client Deleted",
+        description: "Client has been removed",
+      });
+      setIsDeleteDialogOpen(false);
+      setSelectedClientId(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete client",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditClient = (client: Client) => {
+    setEditingClient(client);
+    setFormData({
+      name: client.name,
+      phone: client.phone || "",
+      email: client.email || "",
+      address: client.address || "",
+      clientType: client.clientType as "public" | "trade",
+      tradeDiscountLevel: client.tradeDiscountLevel || "",
+      notes: client.notes || "",
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSubmitEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingClient || !formData.name || !formData.phone) {
+      toast({
+        title: "Error",
+        description: "Name and phone are required",
+        variant: "destructive",
+      });
+      return;
+    }
+    updateClientMutation.mutate({
+      id: editingClient.id,
+      data: {
+        name: formData.name,
+        phone: formData.phone,
+        email: formData.email || undefined,
+        address: formData.address || undefined,
+        clientType: formData.clientType,
+        tradeDiscountLevel: formData.clientType === "trade" && formData.tradeDiscountLevel
+          ? (formData.tradeDiscountLevel as "gold" | "silver" | "bronze") 
+          : undefined,
+        notes: formData.notes || undefined,
+      },
+    });
+  };
 
   const resetForm = () => {
     setFormData({
@@ -387,6 +488,25 @@ export default function Clients() {
                 <p className="text-muted-foreground">Client since {selectedClient.createdAt}</p>
               </div>
               <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => {
+                    const client = clients.find(c => c.id === selectedClient.id);
+                    if (client) handleEditClient(client);
+                  }}
+                  data-testid="button-edit-client"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  data-testid="button-delete-client"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
                 <Button variant="outline" data-testid="button-add-note">Add Note</Button>
                 <Button data-testid="button-create-quote">Create Quote</Button>
               </div>
@@ -540,6 +660,138 @@ export default function Clients() {
           </div>
         )}
       </div>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Client</DialogTitle>
+            <DialogDescription>Update client information</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmitEdit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-name">Client Name</Label>
+              <Input 
+                id="edit-name" 
+                placeholder="Enter name" 
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                data-testid="input-edit-client-name" 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-phone">Phone</Label>
+                <Input 
+                  id="edit-phone" 
+                  placeholder="0400 000 000" 
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  data-testid="input-edit-phone" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">Email</Label>
+                <Input 
+                  id="edit-email" 
+                  type="email" 
+                  placeholder="email@example.com" 
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  data-testid="input-edit-email" 
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-address">Address</Label>
+              <Input 
+                id="edit-address" 
+                placeholder="Enter address" 
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                data-testid="input-edit-address" 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-clientType">Client Type</Label>
+                <Select 
+                  value={formData.clientType}
+                  onValueChange={(value: "public" | "trade") => setFormData({ ...formData, clientType: value })}
+                >
+                  <SelectTrigger data-testid="select-edit-client-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public</SelectItem>
+                    <SelectItem value="trade">Trade</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {formData.clientType === "trade" && (
+                <div className="space-y-2">
+                  <Label htmlFor="edit-discount">Trade Level</Label>
+                  <Select 
+                    value={formData.tradeDiscountLevel}
+                    onValueChange={(value) => setFormData({ ...formData, tradeDiscountLevel: value })}
+                  >
+                    <SelectTrigger data-testid="select-edit-discount">
+                      <SelectValue placeholder="Select level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bronze">Bronze (10%)</SelectItem>
+                      <SelectItem value="silver">Silver (15%)</SelectItem>
+                      <SelectItem value="gold">Gold (20%)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea 
+                id="edit-notes" 
+                placeholder="Add notes..." 
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                data-testid="textarea-edit-notes" 
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={updateClientMutation.isPending}
+                data-testid="button-save-client"
+              >
+                {updateClientMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Client</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedClient?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedClientId && deleteClientMutation.mutate(selectedClientId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteClientMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

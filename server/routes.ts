@@ -38,6 +38,33 @@ export async function registerRoutes(
     }
   });
 
+  // ============ GLOBAL SEARCH ============
+  app.get("/api/search", async (req, res) => {
+    try {
+      const { q } = req.query;
+      if (!q || typeof q !== "string" || q.length < 2) {
+        return res.json({ clients: [], leads: [], jobs: [], quotes: [] });
+      }
+
+      const [clients, leads, jobs, quotes] = await Promise.all([
+        storage.searchClients(q),
+        storage.searchLeads(q),
+        storage.searchJobs(q),
+        storage.searchQuotes(q),
+      ]);
+
+      res.json({
+        clients: clients.slice(0, 5),
+        leads: leads.slice(0, 5),
+        jobs: jobs.slice(0, 5),
+        quotes: quotes.slice(0, 5),
+      });
+    } catch (error) {
+      console.error("Error performing global search:", error);
+      res.status(500).json({ error: "Failed to perform search" });
+    }
+  });
+
   // ============ CLIENTS ============
   app.get("/api/clients", async (req, res) => {
     try {

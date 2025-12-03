@@ -75,6 +75,14 @@ All endpoints use `/api/` prefix:
 8. **Installer App**: Mobile-friendly installer interface
 9. **Trade Portal**: Self-service for trade clients
 
+## Recent Changes (December 2025)
+- **Global Search**: Added search API endpoint (`/api/search/global`) and GlobalSearch component in header with dropdown showing results across leads, quotes, and jobs
+- **Edit/Delete functionality**: Full CRUD operations for Clients, Leads, and Jobs including:
+  - Edit dialogs with form validation
+  - Delete confirmation dialogs with warnings
+  - Inline icon buttons on detail views
+  - Context menu actions on LeadCard component
+
 ## Development Notes
 - All pages connected to real backend APIs
 - Mock data removed and replaced with database queries

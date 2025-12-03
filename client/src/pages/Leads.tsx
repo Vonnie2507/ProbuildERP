@@ -6,10 +6,21 @@ import { KanbanBoard } from "@/components/leads/KanbanBoard";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Select,
   SelectContent,
@@ -49,6 +60,10 @@ export default function Leads() {
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingLead, setEditingLead] = useState<Lead | null>(null);
+  const [leadToDelete, setLeadToDelete] = useState<KanbanLead | null>(null);
   const [formData, setFormData] = useState({
     clientName: "",
     phone: "",
@@ -69,10 +84,7 @@ export default function Leads() {
 
   const createLeadMutation = useMutation({
     mutationFn: async (data: InsertLead) => {
-      return apiRequest("/api/leads", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("POST", "/api/leads", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
@@ -95,15 +107,85 @@ export default function Leads() {
 
   const updateLeadMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Lead> }) => {
-      return apiRequest(`/api/leads/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("PATCH", `/api/leads/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({
+        title: "Lead Updated",
+        description: "Lead has been updated successfully",
+      });
+      setIsEditDialogOpen(false);
+      setEditingLead(null);
+      resetForm();
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update lead",
+        variant: "destructive",
+      });
     },
   });
+
+  const deleteLeadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/leads/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({
+        title: "Lead Deleted",
+        description: "Lead has been removed",
+      });
+      setIsDeleteDialogOpen(false);
+      setLeadToDelete(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete lead",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditLead = (lead: KanbanLead) => {
+    const originalLead = leads.find(l => l.id === lead.id);
+    if (originalLead) {
+      setEditingLead(originalLead);
+      setFormData({
+        clientName: lead.clientName,
+        phone: lead.phone,
+        email: lead.email,
+        address: lead.address,
+        leadType: lead.leadType,
+        source: (originalLead.source as typeof formData.source) || "website",
+        description: originalLead.description || "",
+      });
+      setIsEditDialogOpen(true);
+    }
+  };
+
+  const handleDeleteLead = (lead: KanbanLead) => {
+    setLeadToDelete(lead);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleSubmitEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLead) return;
+    
+    updateLeadMutation.mutate({
+      id: editingLead.id,
+      data: {
+        source: formData.source,
+        leadType: formData.leadType,
+        description: formData.description,
+        siteAddress: formData.address,
+      },
+    });
+  };
 
   const resetForm = () => {
     setFormData({
@@ -365,8 +447,114 @@ export default function Leads() {
           onLeadClick={handleLeadClick}
           onAddLead={handleAddLead}
           onConvertToQuote={handleConvertToQuote}
+          onEditLead={handleEditLead}
+          onDeleteLead={handleDeleteLead}
         />
       )}
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Lead</DialogTitle>
+            <DialogDescription>
+              Update lead details for {editingLead ? getClientName(editingLead.clientId) : "this lead"}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmitEdit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-address">Site Address</Label>
+              <Input 
+                id="edit-address" 
+                placeholder="Enter site address" 
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                data-testid="input-edit-address" 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-leadType">Lead Type</Label>
+                <Select 
+                  value={formData.leadType}
+                  onValueChange={(value: "public" | "trade") => setFormData({ ...formData, leadType: value })}
+                >
+                  <SelectTrigger data-testid="select-edit-lead-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="public">Public</SelectItem>
+                    <SelectItem value="trade">Trade</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-source">Source</Label>
+                <Select 
+                  value={formData.source}
+                  onValueChange={(value: any) => setFormData({ ...formData, source: value })}
+                >
+                  <SelectTrigger data-testid="select-edit-source">
+                    <SelectValue placeholder="Select source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="website">Website</SelectItem>
+                    <SelectItem value="google">Google</SelectItem>
+                    <SelectItem value="referral">Referral</SelectItem>
+                    <SelectItem value="phone">Phone</SelectItem>
+                    <SelectItem value="walk_in">Walk In</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                placeholder="Describe the fencing requirements..."
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                data-testid="textarea-edit-description"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              To update client contact details, please edit the client record from the Clients page.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={updateLeadMutation.isPending}
+                data-testid="button-save-lead"
+              >
+                {updateLeadMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Lead</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the lead for "{leadToDelete?.clientName}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => leadToDelete && deleteLeadMutation.mutate(leadToDelete.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-lead"
+            >
+              {deleteLeadMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

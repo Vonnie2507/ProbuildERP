@@ -36,6 +36,8 @@ interface KanbanBoardProps {
   onLeadClick?: (lead: Lead) => void;
   onAddLead?: () => void;
   onConvertToQuote?: (lead: Lead) => void;
+  onEditLead?: (lead: Lead) => void;
+  onDeleteLead?: (lead: Lead) => void;
 }
 
 const columns: KanbanColumn[] = [
@@ -51,6 +53,8 @@ export function KanbanBoard({
   onLeadClick,
   onAddLead,
   onConvertToQuote,
+  onEditLead,
+  onDeleteLead,
 }: KanbanBoardProps) {
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null);
 
@@ -122,6 +126,8 @@ export function KanbanBoard({
                           lead={lead}
                           onClick={() => onLeadClick?.(lead)}
                           onConvertToQuote={() => onConvertToQuote?.(lead)}
+                          onEdit={() => onEditLead?.(lead)}
+                          onDelete={() => onDeleteLead?.(lead)}
                         />
                       </div>
                     ))}

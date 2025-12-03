@@ -2,11 +2,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, Mail, MapPin, Clock, MoreHorizontal } from "lucide-react";
+import { Phone, Mail, MapPin, Clock, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -33,6 +34,8 @@ interface LeadCardProps {
   onConvertToQuote?: () => void;
   onAddNote?: () => void;
   onFollowUp?: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }
 
 export function LeadCard({
@@ -41,6 +44,8 @@ export function LeadCard({
   onConvertToQuote,
   onAddNote,
   onFollowUp,
+  onEdit,
+  onDelete,
 }: LeadCardProps) {
   return (
     <Card
@@ -61,6 +66,10 @@ export function LeadCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit?.(); }} data-testid={`button-edit-lead-${lead.id}`}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit Lead
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onConvertToQuote?.(); }}>
                 Convert to Quote
               </DropdownMenuItem>
@@ -69,6 +78,15 @@ export function LeadCard({
               </DropdownMenuItem>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onFollowUp?.(); }}>
                 Log Follow-up
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={(e) => { e.stopPropagation(); onDelete?.(); }} 
+                className="text-destructive focus:text-destructive"
+                data-testid={`button-delete-lead-${lead.id}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Lead
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

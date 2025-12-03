@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,32 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
   Search,
   Filter,
   MapPin,
@@ -21,8 +47,11 @@ import {
   FileText,
   Camera,
   Briefcase,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Job, Client, ProductionTask } from "@shared/schema";
 
 type JobStatus = "in_progress" | "production" | "ready" | "scheduled" | "complete";
@@ -53,10 +82,86 @@ export default function Jobs() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [formData, setFormData] = useState({
+    status: "",
+    notes: "",
+    siteAddress: "",
+  });
 
   const { data: jobs = [], isLoading: jobsLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
   });
+
+  const updateJobMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Job> }) => {
+      return apiRequest("PATCH", `/api/jobs/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({
+        title: "Job Updated",
+        description: "Job has been updated successfully",
+      });
+      setIsEditDialogOpen(false);
+      setEditingJob(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update job",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteJobMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/jobs/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({
+        title: "Job Deleted",
+        description: "Job has been removed",
+      });
+      setIsDeleteDialogOpen(false);
+      setSelectedJobId(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to delete job",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleEditJob = (job: Job) => {
+    setEditingJob(job);
+    setFormData({
+      status: job.status,
+      notes: job.notes || "",
+      siteAddress: job.siteAddress,
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleSubmitEdit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingJob) return;
+    
+    updateJobMutation.mutate({
+      id: editingJob.id,
+      data: {
+        status: formData.status as Job["status"],
+        notes: formData.notes || undefined,
+        siteAddress: formData.siteAddress,
+      },
+    });
+  };
 
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
@@ -266,6 +371,25 @@ export default function Jobs() {
                 <p className="text-muted-foreground">{selectedJob.fenceStyle}</p>
               </div>
               <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => {
+                    const job = jobs.find(j => j.id === selectedJob.id);
+                    if (job) handleEditJob(job);
+                  }}
+                  data-testid="button-edit-job"
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  data-testid="button-delete-job"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
                 <Button variant="outline" data-testid="button-update-status">Update Status</Button>
                 <Button data-testid="button-view-materials">View Materials</Button>
               </div>
@@ -469,6 +593,97 @@ export default function Jobs() {
           </div>
         )}
       </div>
+
+      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Job</DialogTitle>
+            <DialogDescription>Update job information</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmitEdit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-siteAddress">Site Address</Label>
+              <Input 
+                id="edit-siteAddress" 
+                placeholder="Enter site address" 
+                value={formData.siteAddress}
+                onChange={(e) => setFormData({ ...formData, siteAddress: e.target.value })}
+                data-testid="input-edit-job-address" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-status">Status</Label>
+              <Select 
+                value={formData.status}
+                onValueChange={(value) => setFormData({ ...formData, status: value })}
+              >
+                <SelectTrigger data-testid="select-edit-job-status">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending_deposit">Pending Deposit</SelectItem>
+                  <SelectItem value="deposit_received">Deposit Received</SelectItem>
+                  <SelectItem value="manufacturing_posts">Manufacturing Posts</SelectItem>
+                  <SelectItem value="manufacturing_panels">Manufacturing Panels</SelectItem>
+                  <SelectItem value="manufacturing_gates">Manufacturing Gates</SelectItem>
+                  <SelectItem value="qa_check">QA Check</SelectItem>
+                  <SelectItem value="ready_for_scheduling">Ready for Scheduling</SelectItem>
+                  <SelectItem value="ready_for_pickup">Ready for Pickup</SelectItem>
+                  <SelectItem value="scheduled">Scheduled</SelectItem>
+                  <SelectItem value="install_in_progress">Install in Progress</SelectItem>
+                  <SelectItem value="install_complete">Install Complete</SelectItem>
+                  <SelectItem value="final_payment_pending">Final Payment Pending</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-notes">Notes</Label>
+              <Textarea
+                id="edit-notes"
+                placeholder="Add job notes..."
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                data-testid="textarea-edit-job-notes"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                disabled={updateJobMutation.isPending}
+                data-testid="button-save-job"
+              >
+                {updateJobMutation.isPending ? "Saving..." : "Save Changes"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Job {selectedJob?.jobNumber}</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the job for "{selectedJob?.clientName}" at {selectedJob?.address}. 
+              This action cannot be undone and will remove all associated production tasks, schedule events, and payment records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedJobId && deleteJobMutation.mutate(selectedJobId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-job"
+            >
+              {deleteJobMutation.isPending ? "Deleting..." : "Delete Job"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

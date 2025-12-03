@@ -49,6 +49,7 @@ export interface IStorage {
   createLead(lead: InsertLead): Promise<Lead>;
   updateLead(id: string, lead: Partial<InsertLead>): Promise<Lead | undefined>;
   deleteLead(id: string): Promise<boolean>;
+  searchLeads(query: string): Promise<Lead[]>;
 
   // Fence Styles
   getFenceStyle(id: string): Promise<FenceStyle | undefined>;
@@ -77,6 +78,7 @@ export interface IStorage {
   updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined>;
   deleteQuote(id: string): Promise<boolean>;
   getNextQuoteNumber(): Promise<string>;
+  searchQuotes(query: string): Promise<Quote[]>;
 
   // Jobs
   getJob(id: string): Promise<Job | undefined>;
@@ -88,6 +90,8 @@ export interface IStorage {
   createJob(job: InsertJob): Promise<Job>;
   updateJob(id: string, job: Partial<InsertJob>): Promise<Job | undefined>;
   getNextJobNumber(): Promise<string>;
+  searchJobs(query: string): Promise<Job[]>;
+  deleteJob(id: string): Promise<boolean>;
 
   // BOM
   getBOM(id: string): Promise<BOM | undefined>;
@@ -281,6 +285,16 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
+  async searchLeads(query: string): Promise<Lead[]> {
+    return db.select().from(leads).where(
+      or(
+        like(leads.description, `%${query}%`),
+        like(leads.siteAddress, `%${query}%`),
+        like(leads.fenceStyle, `%${query}%`)
+      )
+    );
+  }
+
   // Fence Styles
   async getFenceStyle(id: string): Promise<FenceStyle | undefined> {
     const [style] = await db.select().from(fenceStyles).where(eq(fenceStyles.id, id));
@@ -392,6 +406,15 @@ export class DatabaseStorage implements IStorage {
     return true;
   }
 
+  async searchQuotes(query: string): Promise<Quote[]> {
+    return db.select().from(quotes).where(
+      or(
+        like(quotes.quoteNumber, `%${query}%`),
+        like(quotes.siteAddress, `%${query}%`)
+      )
+    );
+  }
+
   async getNextQuoteNumber(): Promise<string> {
     const year = new Date().getFullYear();
     const [result] = await db.select({ count: sql<number>`count(*)` })
@@ -448,6 +471,21 @@ export class DatabaseStorage implements IStorage {
       .where(like(jobs.jobNumber, `JOB-${year}-%`));
     const count = (result?.count || 0) + 1;
     return `JOB-${year}-${String(count).padStart(4, '0')}`;
+  }
+
+  async searchJobs(query: string): Promise<Job[]> {
+    return db.select().from(jobs).where(
+      or(
+        like(jobs.jobNumber, `%${query}%`),
+        like(jobs.siteAddress, `%${query}%`),
+        like(jobs.fenceStyle, `%${query}%`)
+      )
+    );
+  }
+
+  async deleteJob(id: string): Promise<boolean> {
+    await db.delete(jobs).where(eq(jobs.id, id));
+    return true;
   }
 
   // BOM

@@ -1,8 +1,8 @@
-import { Bell, Search } from "lucide-react";
+import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "./ThemeToggle";
+import { GlobalSearch } from "./GlobalSearch";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -28,15 +28,7 @@ export function Header({ title }: HeaderProps) {
       </div>
 
       <div className="flex flex-1 items-center justify-center max-w-md">
-        <div className="relative w-full">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search jobs, clients, quotes..."
-            className="pl-9 w-full"
-            data-testid="input-global-search"
-          />
-        </div>
+        <GlobalSearch />
       </div>
 
       <div className="flex items-center gap-2">
