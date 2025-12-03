@@ -13,6 +13,7 @@ import {
 
 interface Lead {
   id: string;
+  leadNumber?: string;
   clientName: string;
   phone: string;
   email: string;
@@ -31,7 +32,7 @@ interface Lead {
 interface LeadCardProps {
   lead: Lead;
   onClick?: () => void;
-  onConvertToQuote?: () => void;
+  onCreateQuote?: () => void;
   onAddNote?: () => void;
   onFollowUp?: () => void;
   onEdit?: () => void;
@@ -41,7 +42,7 @@ interface LeadCardProps {
 export function LeadCard({
   lead,
   onClick,
-  onConvertToQuote,
+  onCreateQuote,
   onAddNote,
   onFollowUp,
   onEdit,
@@ -70,8 +71,8 @@ export function LeadCard({
                 <Pencil className="h-4 w-4 mr-2" />
                 Edit Lead
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onConvertToQuote?.(); }}>
-                Convert to Quote
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onCreateQuote?.(); }} data-testid={`button-create-quote-${lead.id}`}>
+                Create Quote
               </DropdownMenuItem>
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onAddNote?.(); }}>
                 Add Note
@@ -92,7 +93,12 @@ export function LeadCard({
           </DropdownMenu>
         </div>
 
-        <h3 className="font-semibold mb-1">{lead.clientName}</h3>
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold">{lead.clientName}</h3>
+          {lead.leadNumber && (
+            <span className="text-xs font-mono text-muted-foreground">{lead.leadNumber}</span>
+          )}
+        </div>
         <p className="text-sm text-muted-foreground mb-3">{lead.fenceStyle}</p>
 
         <div className="space-y-1.5 text-xs text-muted-foreground mb-3">

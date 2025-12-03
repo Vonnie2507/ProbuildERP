@@ -10,6 +10,7 @@ type LeadStatus = "new" | "contacted" | "quoted" | "approved" | "declined";
 
 interface Lead {
   id: string;
+  leadNumber?: string;
   clientName: string;
   phone: string;
   email: string;
@@ -35,7 +36,7 @@ interface KanbanBoardProps {
   leads: Lead[];
   onLeadClick?: (lead: Lead) => void;
   onAddLead?: () => void;
-  onConvertToQuote?: (lead: Lead) => void;
+  onCreateQuote?: (lead: Lead) => void;
   onEditLead?: (lead: Lead) => void;
   onDeleteLead?: (lead: Lead) => void;
 }
@@ -52,7 +53,7 @@ export function KanbanBoard({
   leads,
   onLeadClick,
   onAddLead,
-  onConvertToQuote,
+  onCreateQuote,
   onEditLead,
   onDeleteLead,
 }: KanbanBoardProps) {
@@ -125,7 +126,7 @@ export function KanbanBoard({
                         <LeadCard
                           lead={lead}
                           onClick={() => onLeadClick?.(lead)}
-                          onConvertToQuote={() => onConvertToQuote?.(lead)}
+                          onCreateQuote={() => onCreateQuote?.(lead)}
                           onEdit={() => onEditLead?.(lead)}
                           onDelete={() => onDeleteLead?.(lead)}
                         />

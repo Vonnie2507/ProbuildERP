@@ -23,7 +23,7 @@ export default function LeadCardExample() {
       <LeadCard
         lead={lead}
         onClick={() => console.log("Lead clicked")}
-        onConvertToQuote={() => console.log("Convert to quote")}
+        onCreateQuote={() => console.log("Create quote")}
         onAddNote={() => console.log("Add note")}
         onFollowUp={() => console.log("Follow up")}
       />

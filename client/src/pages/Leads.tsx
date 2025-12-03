@@ -46,6 +46,7 @@ type LeadStatus = "new" | "contacted" | "quoted" | "approved" | "declined";
 
 interface KanbanLead {
   id: string;
+  leadNumber?: string;
   clientName: string;
   phone: string;
   email: string;
@@ -261,6 +262,7 @@ export default function Leads() {
 
   const kanbanLeads: KanbanLead[] = leads.map((lead) => ({
     id: lead.id,
+    leadNumber: lead.leadNumber || undefined,
     clientName: getClientName(lead.clientId),
     phone: getClientPhone(lead.clientId),
     email: getClientEmail(lead.clientId),
@@ -293,7 +295,7 @@ export default function Leads() {
     }).format(Number(amount));
   };
 
-  const handleConvertToQuote = (lead: KanbanLead) => {
+  const handleCreateQuote = (lead: KanbanLead) => {
     const originalLead = leads.find(l => l.id === lead.id);
     if (originalLead) {
       setSelectedLeadForQuote(originalLead);
@@ -520,7 +522,7 @@ export default function Leads() {
           leads={filteredLeads}
           onLeadClick={handleLeadClick}
           onAddLead={handleAddLead}
-          onConvertToQuote={handleConvertToQuote}
+          onCreateQuote={handleCreateQuote}
           onEditLead={handleEditLead}
           onDeleteLead={handleDeleteLead}
         />

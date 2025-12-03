@@ -551,6 +551,7 @@ export const insertClientSchema = createInsertSchema(clients).omit({
 
 export const insertLeadSchema = createInsertSchema(leads).omit({
   id: true,
+  leadNumber: true,
   createdAt: true,
   updatedAt: true,
 });
