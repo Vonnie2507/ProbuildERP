@@ -1336,6 +1336,58 @@ export async function registerRoutes(
     }
   });
 
+  // Webhook endpoint to receive incoming SMS from Twilio
+  app.post("/api/sms/incoming", async (req, res) => {
+    try {
+      console.log("Incoming SMS webhook received:", req.body);
+      
+      // Twilio sends these fields in the webhook
+      const { From, Body, MessageSid } = req.body;
+      
+      if (!From || !Body) {
+        console.log("Missing From or Body in incoming SMS");
+        return res.status(400).send("Missing required fields");
+      }
+
+      // Find client by phone number to get their name
+      let recipientName = "Unknown";
+      const clients = await storage.getClients();
+      const matchingClient = clients.find((c) => {
+        if (!c.phone) return false;
+        // Normalize phone numbers for comparison
+        const normalizedClientPhone = c.phone.replace(/\D/g, "").slice(-9);
+        const normalizedFrom = From.replace(/\D/g, "").slice(-9);
+        return normalizedClientPhone === normalizedFrom;
+      });
+
+      if (matchingClient) {
+        recipientName = matchingClient.name;
+      }
+
+      // Store the incoming message
+      const smsLog = await storage.createSMSLog({
+        recipientPhone: From,
+        recipientName,
+        message: Body,
+        twilioMessageSid: MessageSid || null,
+        status: "received",
+        isOutbound: false,
+        sentAt: new Date(),
+        relatedEntityType: matchingClient ? "client" : null,
+        relatedEntityId: matchingClient?.id || null,
+      });
+
+      console.log("Incoming SMS saved:", smsLog.id, "from:", From);
+
+      // Return TwiML response (empty response, no auto-reply)
+      res.set("Content-Type", "text/xml");
+      res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+    } catch (error) {
+      console.error("Error processing incoming SMS:", error);
+      res.status(500).send("Error processing message");
+    }
+  });
+
   const smsQuoteReadySchema = z.object({
     quoteId: z.string().min(1, "Quote ID is required"),
   });
