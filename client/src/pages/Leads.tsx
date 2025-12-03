@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { KanbanBoard } from "@/components/leads/KanbanBoard";
+import { QuoteBuilder } from "@/components/quotes/QuoteBuilder";
 import {
   Dialog,
   DialogContent,
@@ -62,8 +63,10 @@ export default function Leads() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isQuoteBuilderOpen, setIsQuoteBuilderOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<Lead | null>(null);
   const [leadToDelete, setLeadToDelete] = useState<KanbanLead | null>(null);
+  const [selectedLeadForQuote, setSelectedLeadForQuote] = useState<Lead | null>(null);
   const [formData, setFormData] = useState({
     clientName: "",
     phone: "",
@@ -239,14 +242,21 @@ export default function Leads() {
   };
 
   const handleConvertToQuote = (lead: KanbanLead) => {
-    updateLeadMutation.mutate({
-      id: lead.id,
-      data: { stage: "quote_sent" },
-    });
-    toast({
-      title: "Converting to Quote",
-      description: `Creating quote for ${lead.clientName}`,
-    });
+    const originalLead = leads.find(l => l.id === lead.id);
+    if (originalLead) {
+      setSelectedLeadForQuote(originalLead);
+      setIsQuoteBuilderOpen(true);
+    }
+  };
+
+  const handleQuoteCreated = () => {
+    if (selectedLeadForQuote) {
+      updateLeadMutation.mutate({
+        id: selectedLeadForQuote.id,
+        data: { stage: "quote_sent" },
+      });
+    }
+    setSelectedLeadForQuote(null);
   };
 
   const handleAddLead = () => {
@@ -555,6 +565,16 @@ export default function Leads() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <QuoteBuilder
+        open={isQuoteBuilderOpen}
+        onOpenChange={setIsQuoteBuilderOpen}
+        lead={selectedLeadForQuote || undefined}
+        client={selectedLeadForQuote?.clientId 
+          ? clients.find(c => c.id === selectedLeadForQuote.clientId) 
+          : undefined}
+        onQuoteCreated={handleQuoteCreated}
+      />
     </div>
   );
 }

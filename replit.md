@@ -82,6 +82,12 @@ All endpoints use `/api/` prefix:
   - Delete confirmation dialogs with warnings
   - Inline icon buttons on detail views
   - Context menu actions on LeadCard component
+- **Quote Builder**: Comprehensive quote creation system accessible from Leads page:
+  - Line items with product selection from inventory
+  - Quick add buttons for posts, rails, pickets
+  - Trade quote toggle with discount calculations
+  - Materials subtotal, labour, and deposit calculations
+  - Draft save or direct send options
 
 ## Development Notes
 - All pages connected to real backend APIs
