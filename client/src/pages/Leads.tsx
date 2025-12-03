@@ -643,7 +643,7 @@ export default function Leads() {
       />
 
       <Dialog open={isDetailDialogOpen} onOpenChange={setIsDetailDialogOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <DialogContent className="sm:max-w-2xl max-h-[90vh]">
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle className="text-xl">Lead Details</DialogTitle>
@@ -654,7 +654,7 @@ export default function Leads() {
           </DialogHeader>
           
           {selectedLead && (
-            <ScrollArea className="flex-1 -mx-6 px-6">
+            <ScrollArea className="h-[65vh] pr-4">
               <div className="space-y-6 pb-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
