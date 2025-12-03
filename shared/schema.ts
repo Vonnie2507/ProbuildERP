@@ -465,6 +465,76 @@ export const documents = pgTable("documents", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
+// Quote Follow-ups table - track follow-up activities for quotes
+export const quoteFollowUps = pgTable("quote_follow_ups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id).notNull(),
+  scheduledDate: timestamp("scheduled_date").notNull(),
+  completedAt: timestamp("completed_at"),
+  followUpType: text("follow_up_type").notNull(), // call, email, sms, meeting
+  notes: text("notes"),
+  outcome: text("outcome"), // no_answer, left_message, spoke_with_client, meeting_scheduled, quote_approved, quote_declined
+  assignedTo: varchar("assigned_to").references(() => users.id),
+  completedBy: varchar("completed_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Automation campaign status enum
+export const campaignStatusEnum = pgEnum("campaign_status", [
+  "active",
+  "paused",
+  "completed",
+  "cancelled"
+]);
+
+// Automation campaign trigger enum
+export const campaignTriggerEnum = pgEnum("campaign_trigger", [
+  "quote_sent",
+  "quote_no_response_3_days",
+  "quote_no_response_7_days",
+  "quote_expiring_soon",
+  "quote_expired",
+  "lead_new",
+  "lead_no_contact_24h",
+  "job_completed",
+  "payment_due"
+]);
+
+// Automation Campaigns table - define automated message sequences
+export const automationCampaigns = pgTable("automation_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  description: text("description"),
+  trigger: campaignTriggerEnum("trigger").notNull(),
+  clientType: clientTypeEnum("client_type"), // null means apply to all
+  isActive: boolean("is_active").notNull().default(true),
+  messageTemplate: text("message_template").notNull(),
+  delayDays: integer("delay_days").notNull().default(0), // days after trigger to send
+  delayHours: integer("delay_hours").notNull().default(0), // additional hours
+  sendWindow: text("send_window"), // e.g. "09:00-17:00" to only send during business hours
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Campaign Enrollments table - track entities enrolled in campaigns
+export const campaignEnrollments = pgTable("campaign_enrollments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  campaignId: varchar("campaign_id").references(() => automationCampaigns.id).notNull(),
+  clientId: varchar("client_id").references(() => clients.id).notNull(),
+  quoteId: varchar("quote_id").references(() => quotes.id),
+  leadId: varchar("lead_id").references(() => leads.id),
+  jobId: varchar("job_id").references(() => jobs.id),
+  status: campaignStatusEnum("status").notNull().default("active"),
+  enrolledAt: timestamp("enrolled_at").notNull().defaultNow(),
+  scheduledSendAt: timestamp("scheduled_send_at"),
+  sentAt: timestamp("sent_at"),
+  messageId: varchar("message_id").references(() => smsLogs.id),
+  cancelledAt: timestamp("cancelled_at"),
+  cancelReason: text("cancel_reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
 // Insert Schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -559,6 +629,23 @@ export const insertDocumentSchema = createInsertSchema(documents).omit({
   createdAt: true,
 });
 
+export const insertQuoteFollowUpSchema = createInsertSchema(quoteFollowUps).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAutomationCampaignSchema = createInsertSchema(automationCampaigns).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCampaignEnrollmentSchema = createInsertSchema(campaignEnrollments).omit({
+  id: true,
+  createdAt: true,
+  enrolledAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -613,3 +700,12 @@ export type ActivityLog = typeof activityLogs.$inferSelect;
 
 export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type Document = typeof documents.$inferSelect;
+
+export type InsertQuoteFollowUp = z.infer<typeof insertQuoteFollowUpSchema>;
+export type QuoteFollowUp = typeof quoteFollowUps.$inferSelect;
+
+export type InsertAutomationCampaign = z.infer<typeof insertAutomationCampaignSchema>;
+export type AutomationCampaign = typeof automationCampaigns.$inferSelect;
+
+export type InsertCampaignEnrollment = z.infer<typeof insertCampaignEnrollmentSchema>;
+export type CampaignEnrollment = typeof campaignEnrollments.$inferSelect;

@@ -35,6 +35,9 @@ A comprehensive ERP & CRM system for Probuild PVC, a Western Australian PVC fenc
 │   │   ├── Clients.tsx      # Client database
 │   │   ├── Inventory.tsx    # Products & stock management
 │   │   ├── Payments.tsx     # Finance tracking
+│   │   ├── Messages.tsx     # SMS conversations
+│   │   ├── QuoteAnalytics.tsx # Quote performance dashboard
+│   │   ├── AutomationCampaigns.tsx # Automated SMS campaigns
 │   │   ├── Installer.tsx    # Mobile installer app
 │   │   └── Trade.tsx        # Trade portal
 │   └── lib/
@@ -49,10 +52,11 @@ A comprehensive ERP & CRM system for Probuild PVC, a Western Australian PVC fenc
 ```
 
 ## Database Schema
-13 main entities:
+16 main entities:
 - users, clients, leads, fenceStyles, products
 - quotes, jobs, bom, productionTasks, installTasks
 - scheduleEvents, payments, notifications, smsLogs, activityLogs, documents
+- quoteFollowUps, automationCampaigns, campaignEnrollments
 
 ## API Endpoints
 All endpoints use `/api/` prefix:
@@ -108,6 +112,22 @@ All endpoints use `/api/` prefix:
   - Proper CSV headers (Content-Type, Content-Disposition)
   - Field escaping for commas/quotes
   - AU date formatting (DD/MM/YYYY)
+- **Quote Analytics Dashboard** (NEW):
+  - Conversion rates and win rates tracking
+  - Quotes per week with trend indicators
+  - Performance by team member with bar charts
+  - Quote pipeline breakdown with pie charts
+  - Recent quotes list with status badges
+  - API endpoint: `/api/quotes/analytics`
+- **Automation Campaigns** (NEW):
+  - Create/Edit/Delete automated SMS campaigns
+  - Trigger types: quote_sent, quote_no_response_3_days, quote_no_response_7_days, quote_expiring_soon, quote_expired, lead_new, lead_no_contact_24h, job_completed, payment_due
+  - Client type targeting (public, trade, or all)
+  - Configurable delay (days + hours) and send windows
+  - Message templates with placeholders ({client_name}, {quote_number}, {quote_amount})
+  - Active/Paused toggle for campaigns
+  - Campaign enrollments tracking
+  - API endpoints: `/api/automation-campaigns`, `/api/campaign-enrollments`
 
 ## Development Notes
 - All pages connected to real backend APIs

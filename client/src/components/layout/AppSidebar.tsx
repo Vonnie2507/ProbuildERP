@@ -14,6 +14,8 @@ import {
   Building2,
   Settings,
   LogOut,
+  BarChart3,
+  Zap,
 } from "lucide-react";
 import {
   Sidebar,
@@ -46,6 +48,11 @@ const operationsItems = [
 const financeItems = [
   { title: "Payments", url: "/payments", icon: CreditCard },
   { title: "Messages", url: "/messages", icon: MessageSquare },
+];
+
+const analyticsItems = [
+  { title: "Quote Analytics", url: "/quote-analytics", icon: BarChart3 },
+  { title: "Automation", url: "/automation", icon: Zap },
 ];
 
 const installerItems = [
@@ -142,6 +149,24 @@ export function AppSidebar() {
                           {unreadCount > 99 ? '99+' : unreadCount}
                         </Badge>
                       )}
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Analytics</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {analyticsItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                    <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

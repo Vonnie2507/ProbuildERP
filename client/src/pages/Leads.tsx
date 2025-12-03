@@ -73,7 +73,7 @@ export default function Leads() {
     email: "",
     address: "",
     leadType: "public" as "public" | "trade",
-    source: "website" as "website" | "google" | "referral" | "phone" | "walk_in",
+    source: "website" as "website" | "phone" | "referral" | "trade" | "walk_in" | "social_media" | "other",
     description: "",
   });
 
@@ -381,10 +381,12 @@ export default function Leads() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="website">Website</SelectItem>
-                      <SelectItem value="google">Google</SelectItem>
-                      <SelectItem value="referral">Referral</SelectItem>
                       <SelectItem value="phone">Phone</SelectItem>
+                      <SelectItem value="referral">Referral</SelectItem>
+                      <SelectItem value="trade">Trade</SelectItem>
                       <SelectItem value="walk_in">Walk In</SelectItem>
+                      <SelectItem value="social_media">Social Media</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -518,10 +520,12 @@ export default function Leads() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="website">Website</SelectItem>
-                    <SelectItem value="google">Google</SelectItem>
-                    <SelectItem value="referral">Referral</SelectItem>
                     <SelectItem value="phone">Phone</SelectItem>
+                    <SelectItem value="referral">Referral</SelectItem>
+                    <SelectItem value="trade">Trade</SelectItem>
                     <SelectItem value="walk_in">Walk In</SelectItem>
+                    <SelectItem value="social_media">Social Media</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

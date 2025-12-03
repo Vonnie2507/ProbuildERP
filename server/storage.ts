@@ -4,6 +4,7 @@ import {
   users, clients, leads, fenceStyles, products, quotes, jobs, bom,
   productionTasks, installTasks, scheduleEvents, payments, notifications,
   smsLogs, smsConversations, messageRanges, activityLogs, documents,
+  quoteFollowUps, automationCampaigns, campaignEnrollments,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Lead, type InsertLead,
@@ -22,6 +23,9 @@ import {
   type MessageRange, type InsertMessageRange,
   type ActivityLog, type InsertActivityLog,
   type Document, type InsertDocument,
+  type QuoteFollowUp, type InsertQuoteFollowUp,
+  type AutomationCampaign, type InsertAutomationCampaign,
+  type CampaignEnrollment, type InsertCampaignEnrollment,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -186,8 +190,38 @@ export interface IStorage {
   createDocument(doc: InsertDocument): Promise<Document>;
   deleteDocument(id: string): Promise<boolean>;
 
+  // Quote Follow-ups
+  getQuoteFollowUp(id: string): Promise<QuoteFollowUp | undefined>;
+  getQuoteFollowUpsByQuote(quoteId: string): Promise<QuoteFollowUp[]>;
+  getPendingFollowUps(): Promise<QuoteFollowUp[]>;
+  getFollowUpsByAssignee(userId: string): Promise<QuoteFollowUp[]>;
+  createQuoteFollowUp(followUp: InsertQuoteFollowUp): Promise<QuoteFollowUp>;
+  updateQuoteFollowUp(id: string, followUp: Partial<InsertQuoteFollowUp>): Promise<QuoteFollowUp | undefined>;
+  deleteQuoteFollowUp(id: string): Promise<boolean>;
+
+  // Automation Campaigns
+  getAutomationCampaign(id: string): Promise<AutomationCampaign | undefined>;
+  getAutomationCampaigns(): Promise<AutomationCampaign[]>;
+  getActiveCampaigns(): Promise<AutomationCampaign[]>;
+  getCampaignsByTrigger(trigger: string): Promise<AutomationCampaign[]>;
+  createAutomationCampaign(campaign: InsertAutomationCampaign): Promise<AutomationCampaign>;
+  updateAutomationCampaign(id: string, campaign: Partial<InsertAutomationCampaign>): Promise<AutomationCampaign | undefined>;
+  deleteAutomationCampaign(id: string): Promise<boolean>;
+
+  // Campaign Enrollments
+  getCampaignEnrollment(id: string): Promise<CampaignEnrollment | undefined>;
+  getCampaignEnrollmentsByCampaign(campaignId: string): Promise<CampaignEnrollment[]>;
+  getCampaignEnrollmentsByClient(clientId: string): Promise<CampaignEnrollment[]>;
+  getPendingEnrollments(): Promise<CampaignEnrollment[]>;
+  createCampaignEnrollment(enrollment: InsertCampaignEnrollment): Promise<CampaignEnrollment>;
+  updateCampaignEnrollment(id: string, enrollment: Partial<InsertCampaignEnrollment>): Promise<CampaignEnrollment | undefined>;
+  cancelCampaignEnrollment(id: string, reason: string): Promise<CampaignEnrollment | undefined>;
+
   // Dashboard Stats
   getDashboardStats(): Promise<DashboardStats>;
+  
+  // Quote Analytics
+  getQuoteAnalytics(): Promise<QuoteAnalytics>;
 }
 
 export interface DashboardStats {
@@ -197,6 +231,22 @@ export interface DashboardStats {
   jobsReadyForInstall: number;
   todayInstalls: number;
   pendingPaymentsTotal: number;
+}
+
+export interface QuoteAnalytics {
+  totalQuotes: number;
+  sentQuotes: number;
+  approvedQuotes: number;
+  declinedQuotes: number;
+  pendingQuotes: number;
+  conversionRate: number;
+  totalValue: number;
+  averageQuoteValue: number;
+  quotesThisWeek: number;
+  quotesLastWeek: number;
+  quotesByStatus: { status: string; count: number }[];
+  quotesByCreator: { userId: string; userName: string; total: number; approved: number; declined: number }[];
+  recentQuotes: Quote[];
 }
 
 export class DatabaseStorage implements IStorage {
@@ -961,6 +1011,208 @@ export class DatabaseStorage implements IStorage {
       jobsReadyForInstall: Number(jobsReadyInstallResult?.count || 0),
       todayInstalls: Number(todayInstallsResult?.count || 0),
       pendingPaymentsTotal: Number(pendingPaymentsResult?.total || 0),
+    };
+  }
+
+  // Quote Follow-ups
+  async getQuoteFollowUp(id: string): Promise<QuoteFollowUp | undefined> {
+    const [followUp] = await db.select().from(quoteFollowUps).where(eq(quoteFollowUps.id, id));
+    return followUp;
+  }
+
+  async getQuoteFollowUpsByQuote(quoteId: string): Promise<QuoteFollowUp[]> {
+    return db.select().from(quoteFollowUps)
+      .where(eq(quoteFollowUps.quoteId, quoteId))
+      .orderBy(desc(quoteFollowUps.scheduledDate));
+  }
+
+  async getPendingFollowUps(): Promise<QuoteFollowUp[]> {
+    return db.select().from(quoteFollowUps)
+      .where(isNull(quoteFollowUps.completedAt))
+      .orderBy(quoteFollowUps.scheduledDate);
+  }
+
+  async getFollowUpsByAssignee(userId: string): Promise<QuoteFollowUp[]> {
+    return db.select().from(quoteFollowUps)
+      .where(and(eq(quoteFollowUps.assignedTo, userId), isNull(quoteFollowUps.completedAt)))
+      .orderBy(quoteFollowUps.scheduledDate);
+  }
+
+  async createQuoteFollowUp(followUp: InsertQuoteFollowUp): Promise<QuoteFollowUp> {
+    const [created] = await db.insert(quoteFollowUps).values(followUp).returning();
+    return created;
+  }
+
+  async updateQuoteFollowUp(id: string, followUp: Partial<InsertQuoteFollowUp>): Promise<QuoteFollowUp | undefined> {
+    const [updated] = await db.update(quoteFollowUps).set(followUp).where(eq(quoteFollowUps.id, id)).returning();
+    return updated;
+  }
+
+  async deleteQuoteFollowUp(id: string): Promise<boolean> {
+    await db.delete(quoteFollowUps).where(eq(quoteFollowUps.id, id));
+    return true;
+  }
+
+  // Automation Campaigns
+  async getAutomationCampaign(id: string): Promise<AutomationCampaign | undefined> {
+    const [campaign] = await db.select().from(automationCampaigns).where(eq(automationCampaigns.id, id));
+    return campaign;
+  }
+
+  async getAutomationCampaigns(): Promise<AutomationCampaign[]> {
+    return db.select().from(automationCampaigns).orderBy(desc(automationCampaigns.createdAt));
+  }
+
+  async getActiveCampaigns(): Promise<AutomationCampaign[]> {
+    return db.select().from(automationCampaigns)
+      .where(eq(automationCampaigns.isActive, true))
+      .orderBy(automationCampaigns.name);
+  }
+
+  async getCampaignsByTrigger(trigger: string): Promise<AutomationCampaign[]> {
+    return db.select().from(automationCampaigns)
+      .where(and(eq(automationCampaigns.trigger, trigger as any), eq(automationCampaigns.isActive, true)));
+  }
+
+  async createAutomationCampaign(campaign: InsertAutomationCampaign): Promise<AutomationCampaign> {
+    const [created] = await db.insert(automationCampaigns).values(campaign).returning();
+    return created;
+  }
+
+  async updateAutomationCampaign(id: string, campaign: Partial<InsertAutomationCampaign>): Promise<AutomationCampaign | undefined> {
+    const [updated] = await db.update(automationCampaigns)
+      .set({ ...campaign, updatedAt: new Date() })
+      .where(eq(automationCampaigns.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteAutomationCampaign(id: string): Promise<boolean> {
+    await db.delete(automationCampaigns).where(eq(automationCampaigns.id, id));
+    return true;
+  }
+
+  // Campaign Enrollments
+  async getCampaignEnrollment(id: string): Promise<CampaignEnrollment | undefined> {
+    const [enrollment] = await db.select().from(campaignEnrollments).where(eq(campaignEnrollments.id, id));
+    return enrollment;
+  }
+
+  async getCampaignEnrollmentsByCampaign(campaignId: string): Promise<CampaignEnrollment[]> {
+    return db.select().from(campaignEnrollments)
+      .where(eq(campaignEnrollments.campaignId, campaignId))
+      .orderBy(desc(campaignEnrollments.enrolledAt));
+  }
+
+  async getCampaignEnrollmentsByClient(clientId: string): Promise<CampaignEnrollment[]> {
+    return db.select().from(campaignEnrollments)
+      .where(eq(campaignEnrollments.clientId, clientId))
+      .orderBy(desc(campaignEnrollments.enrolledAt));
+  }
+
+  async getPendingEnrollments(): Promise<CampaignEnrollment[]> {
+    return db.select().from(campaignEnrollments)
+      .where(and(eq(campaignEnrollments.status, 'active'), isNull(campaignEnrollments.sentAt)))
+      .orderBy(campaignEnrollments.scheduledSendAt);
+  }
+
+  async createCampaignEnrollment(enrollment: InsertCampaignEnrollment): Promise<CampaignEnrollment> {
+    const [created] = await db.insert(campaignEnrollments).values(enrollment).returning();
+    return created;
+  }
+
+  async updateCampaignEnrollment(id: string, enrollment: Partial<InsertCampaignEnrollment>): Promise<CampaignEnrollment | undefined> {
+    const [updated] = await db.update(campaignEnrollments).set(enrollment).where(eq(campaignEnrollments.id, id)).returning();
+    return updated;
+  }
+
+  async cancelCampaignEnrollment(id: string, reason: string): Promise<CampaignEnrollment | undefined> {
+    const [updated] = await db.update(campaignEnrollments)
+      .set({ status: 'cancelled', cancelledAt: new Date(), cancelReason: reason })
+      .where(eq(campaignEnrollments.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Quote Analytics
+  async getQuoteAnalytics(): Promise<QuoteAnalytics> {
+    const allQuotes = await db.select().from(quotes).orderBy(desc(quotes.createdAt));
+    
+    const now = new Date();
+    const startOfThisWeek = new Date(now);
+    startOfThisWeek.setDate(now.getDate() - now.getDay());
+    startOfThisWeek.setHours(0, 0, 0, 0);
+    
+    const startOfLastWeek = new Date(startOfThisWeek);
+    startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+
+    const totalQuotes = allQuotes.length;
+    const sentQuotes = allQuotes.filter(q => q.status === 'sent').length;
+    const approvedQuotes = allQuotes.filter(q => q.status === 'approved').length;
+    const declinedQuotes = allQuotes.filter(q => q.status === 'declined').length;
+    const pendingQuotes = allQuotes.filter(q => q.status === 'sent' || q.status === 'draft').length;
+    
+    const quotesThisWeek = allQuotes.filter(q => new Date(q.createdAt) >= startOfThisWeek).length;
+    const quotesLastWeek = allQuotes.filter(q => {
+      const date = new Date(q.createdAt);
+      return date >= startOfLastWeek && date < startOfThisWeek;
+    }).length;
+
+    const totalValue = allQuotes.reduce((sum, q) => sum + Number(q.totalAmount || 0), 0);
+    const averageQuoteValue = totalQuotes > 0 ? totalValue / totalQuotes : 0;
+    
+    const decidedQuotes = approvedQuotes + declinedQuotes;
+    const conversionRate = decidedQuotes > 0 ? (approvedQuotes / decidedQuotes) * 100 : 0;
+
+    // Group by status
+    const statusCounts = ['draft', 'sent', 'approved', 'declined', 'expired'].map(status => ({
+      status,
+      count: allQuotes.filter(q => q.status === status).length,
+    }));
+
+    // Group by creator (get users data)
+    const allUsers = await db.select().from(users);
+    const creatorStats: { [key: string]: { total: number; approved: number; declined: number; userName: string } } = {};
+    
+    allQuotes.forEach(q => {
+      if (q.createdBy) {
+        if (!creatorStats[q.createdBy]) {
+          const user = allUsers.find(u => u.id === q.createdBy);
+          creatorStats[q.createdBy] = {
+            total: 0,
+            approved: 0,
+            declined: 0,
+            userName: user ? `${user.firstName} ${user.lastName}` : 'Unknown',
+          };
+        }
+        creatorStats[q.createdBy].total++;
+        if (q.status === 'approved') creatorStats[q.createdBy].approved++;
+        if (q.status === 'declined') creatorStats[q.createdBy].declined++;
+      }
+    });
+
+    const quotesByCreator = Object.entries(creatorStats).map(([userId, stats]) => ({
+      userId,
+      userName: stats.userName,
+      total: stats.total,
+      approved: stats.approved,
+      declined: stats.declined,
+    }));
+
+    return {
+      totalQuotes,
+      sentQuotes,
+      approvedQuotes,
+      declinedQuotes,
+      pendingQuotes,
+      conversionRate,
+      totalValue,
+      averageQuoteValue,
+      quotesThisWeek,
+      quotesLastWeek,
+      quotesByStatus: statusCounts,
+      quotesByCreator,
+      recentQuotes: allQuotes.slice(0, 10),
     };
   }
 }

@@ -421,6 +421,16 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/quotes/analytics", async (req, res) => {
+    try {
+      const analytics = await storage.getQuoteAnalytics();
+      res.json(analytics);
+    } catch (error) {
+      console.error("Error fetching quote analytics:", error);
+      res.status(500).json({ error: "Failed to fetch quote analytics" });
+    }
+  });
+
   app.get("/api/quotes/:id", async (req, res) => {
     try {
       const quote = await storage.getQuote(req.params.id);
@@ -2031,6 +2041,177 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error exporting leads:", error);
       res.status(500).json({ error: "Failed to export leads" });
+    }
+  });
+
+  // ============ QUOTE FOLLOW-UPS ============
+
+  app.get("/api/quote-follow-ups", async (req, res) => {
+    try {
+      const followUps = await storage.getPendingFollowUps();
+      res.json(followUps);
+    } catch (error) {
+      console.error("Error fetching follow-ups:", error);
+      res.status(500).json({ error: "Failed to fetch follow-ups" });
+    }
+  });
+
+  app.get("/api/quote-follow-ups/quote/:quoteId", async (req, res) => {
+    try {
+      const followUps = await storage.getQuoteFollowUpsByQuote(req.params.quoteId);
+      res.json(followUps);
+    } catch (error) {
+      console.error("Error fetching follow-ups:", error);
+      res.status(500).json({ error: "Failed to fetch follow-ups" });
+    }
+  });
+
+  app.post("/api/quote-follow-ups", async (req, res) => {
+    try {
+      const followUp = await storage.createQuoteFollowUp({
+        ...req.body,
+        scheduledDate: new Date(req.body.scheduledDate),
+      });
+      res.status(201).json(followUp);
+    } catch (error) {
+      console.error("Error creating follow-up:", error);
+      res.status(500).json({ error: "Failed to create follow-up" });
+    }
+  });
+
+  app.patch("/api/quote-follow-ups/:id", async (req, res) => {
+    try {
+      const updates = { ...req.body };
+      if (updates.scheduledDate) {
+        updates.scheduledDate = new Date(updates.scheduledDate);
+      }
+      if (updates.completedAt) {
+        updates.completedAt = new Date(updates.completedAt);
+      }
+      const followUp = await storage.updateQuoteFollowUp(req.params.id, updates);
+      if (!followUp) {
+        return res.status(404).json({ error: "Follow-up not found" });
+      }
+      res.json(followUp);
+    } catch (error) {
+      console.error("Error updating follow-up:", error);
+      res.status(500).json({ error: "Failed to update follow-up" });
+    }
+  });
+
+  app.delete("/api/quote-follow-ups/:id", async (req, res) => {
+    try {
+      await storage.deleteQuoteFollowUp(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting follow-up:", error);
+      res.status(500).json({ error: "Failed to delete follow-up" });
+    }
+  });
+
+  // ============ AUTOMATION CAMPAIGNS ============
+
+  app.get("/api/automation-campaigns", async (req, res) => {
+    try {
+      const campaigns = await storage.getAutomationCampaigns();
+      res.json(campaigns);
+    } catch (error) {
+      console.error("Error fetching campaigns:", error);
+      res.status(500).json({ error: "Failed to fetch campaigns" });
+    }
+  });
+
+  app.get("/api/automation-campaigns/:id", async (req, res) => {
+    try {
+      const campaign = await storage.getAutomationCampaign(req.params.id);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      res.json(campaign);
+    } catch (error) {
+      console.error("Error fetching campaign:", error);
+      res.status(500).json({ error: "Failed to fetch campaign" });
+    }
+  });
+
+  app.post("/api/automation-campaigns", async (req, res) => {
+    try {
+      const campaign = await storage.createAutomationCampaign(req.body);
+      res.status(201).json(campaign);
+    } catch (error) {
+      console.error("Error creating campaign:", error);
+      res.status(500).json({ error: "Failed to create campaign" });
+    }
+  });
+
+  app.patch("/api/automation-campaigns/:id", async (req, res) => {
+    try {
+      const campaign = await storage.updateAutomationCampaign(req.params.id, req.body);
+      if (!campaign) {
+        return res.status(404).json({ error: "Campaign not found" });
+      }
+      res.json(campaign);
+    } catch (error) {
+      console.error("Error updating campaign:", error);
+      res.status(500).json({ error: "Failed to update campaign" });
+    }
+  });
+
+  app.delete("/api/automation-campaigns/:id", async (req, res) => {
+    try {
+      await storage.deleteAutomationCampaign(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting campaign:", error);
+      res.status(500).json({ error: "Failed to delete campaign" });
+    }
+  });
+
+  // ============ CAMPAIGN ENROLLMENTS ============
+
+  app.get("/api/campaign-enrollments", async (req, res) => {
+    try {
+      const enrollments = await storage.getPendingEnrollments();
+      res.json(enrollments);
+    } catch (error) {
+      console.error("Error fetching enrollments:", error);
+      res.status(500).json({ error: "Failed to fetch enrollments" });
+    }
+  });
+
+  app.get("/api/campaign-enrollments/campaign/:campaignId", async (req, res) => {
+    try {
+      const enrollments = await storage.getCampaignEnrollmentsByCampaign(req.params.campaignId);
+      res.json(enrollments);
+    } catch (error) {
+      console.error("Error fetching enrollments:", error);
+      res.status(500).json({ error: "Failed to fetch enrollments" });
+    }
+  });
+
+  app.post("/api/campaign-enrollments", async (req, res) => {
+    try {
+      const enrollment = await storage.createCampaignEnrollment({
+        ...req.body,
+        scheduledSendAt: req.body.scheduledSendAt ? new Date(req.body.scheduledSendAt) : null,
+      });
+      res.status(201).json(enrollment);
+    } catch (error) {
+      console.error("Error creating enrollment:", error);
+      res.status(500).json({ error: "Failed to create enrollment" });
+    }
+  });
+
+  app.patch("/api/campaign-enrollments/:id/cancel", async (req, res) => {
+    try {
+      const enrollment = await storage.cancelCampaignEnrollment(req.params.id, req.body.reason || "Cancelled by user");
+      if (!enrollment) {
+        return res.status(404).json({ error: "Enrollment not found" });
+      }
+      res.json(enrollment);
+    } catch (error) {
+      console.error("Error cancelling enrollment:", error);
+      res.status(500).json({ error: "Failed to cancel enrollment" });
     }
   });
 
