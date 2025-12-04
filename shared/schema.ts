@@ -204,8 +204,9 @@ export const leadTaskPriorityEnum = pgEnum("lead_task_priority", [
 
 // Call direction enum for call logs
 export const callDirectionEnum = pgEnum("call_direction", [
-  "outbound_staff_to_client",
-  "inbound_client_to_probuild"
+  "outbound",
+  "inbound",
+  "missed"
 ]);
 
 // Transcription status enum for call logs
