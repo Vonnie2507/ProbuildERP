@@ -86,6 +86,7 @@ export default function Leads() {
     leadType: "public" as "public" | "trade",
     source: "website" as "website" | "phone" | "referral" | "trade" | "walk_in" | "social_media" | "other",
     description: "",
+    jobFulfillmentType: "supply_install" as "supply_only" | "supply_install",
   });
 
   const { data: leads = [], isLoading: leadsLoading } = useQuery<Lead[]>({
@@ -205,6 +206,7 @@ export default function Leads() {
         leadType: lead.leadType,
         source: (originalLead.source as typeof formData.source) || "website",
         description: originalLead.description || "",
+        jobFulfillmentType: (originalLead.jobFulfillmentType as "supply_only" | "supply_install") || "supply_install",
       });
       setIsEditDialogOpen(true);
     }
@@ -226,6 +228,7 @@ export default function Leads() {
         leadType: formData.leadType,
         description: formData.description,
         siteAddress: formData.address,
+        jobFulfillmentType: formData.jobFulfillmentType,
       },
     });
   };
@@ -239,6 +242,7 @@ export default function Leads() {
       leadType: "public",
       source: "website",
       description: "",
+      jobFulfillmentType: "supply_install",
     });
   };
 
@@ -326,6 +330,7 @@ export default function Leads() {
       description: formData.description,
       siteAddress: formData.address,
       stage: "new",
+      jobFulfillmentType: formData.jobFulfillmentType,
     });
   };
 
@@ -444,6 +449,24 @@ export default function Leads() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="jobFulfillmentType">Job Type</Label>
+                <Select 
+                  value={formData.jobFulfillmentType}
+                  onValueChange={(value: "supply_only" | "supply_install") => setFormData({ ...formData, jobFulfillmentType: value })}
+                >
+                  <SelectTrigger data-testid="select-job-fulfillment-type">
+                    <SelectValue placeholder="Select job type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="supply_install">Supply & Install</SelectItem>
+                    <SelectItem value="supply_only">Supply Only</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Supply & Install jobs include the Setup & Handover document
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="description">Description</Label>
@@ -583,6 +606,24 @@ export default function Leads() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-jobFulfillmentType">Job Type</Label>
+              <Select 
+                value={formData.jobFulfillmentType}
+                onValueChange={(value: "supply_only" | "supply_install") => setFormData({ ...formData, jobFulfillmentType: value })}
+              >
+                <SelectTrigger data-testid="select-edit-job-fulfillment-type">
+                  <SelectValue placeholder="Select job type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="supply_install">Supply & Install</SelectItem>
+                  <SelectItem value="supply_only">Supply Only</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Supply & Install jobs include the Setup & Handover document
+              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-description">Description</Label>
@@ -755,6 +796,14 @@ export default function Leads() {
                       <div>
                         <span className="text-muted-foreground">Source:</span>
                         <div className="font-medium capitalize">{selectedLead.source?.replace("_", " ") || "Unknown"}</div>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Job Type:</span>
+                        <div className="font-medium">
+                          <Badge variant={selectedLead.jobFulfillmentType === "supply_install" ? "default" : "secondary"} data-testid="badge-job-type">
+                            {selectedLead.jobFulfillmentType === "supply_install" ? "Supply & Install" : "Supply Only"}
+                          </Badge>
+                        </div>
                       </div>
                       <div>
                         <span className="text-muted-foreground">Measurements:</span>

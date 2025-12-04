@@ -198,6 +198,7 @@ export const leads = pgTable("leads", {
   clientId: varchar("client_id").references(() => clients.id),
   source: leadSourceEnum("source").notNull().default("website"),
   leadType: clientTypeEnum("lead_type").notNull().default("public"),
+  jobFulfillmentType: jobTypeEnum("job_fulfillment_type").default("supply_install"),
   description: text("description"),
   siteAddress: text("site_address"),
   measurementsProvided: boolean("measurements_provided").default(false),
