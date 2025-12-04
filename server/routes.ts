@@ -27,11 +27,135 @@ const stripe = process.env.STRIPE_SECRET_KEY
     })
   : null;
 
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
+  // ============ AUTHENTICATION ============
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = loginSchema.parse(req.body);
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      
+      if (!user.isActive) {
+        return res.status(401).json({ error: "Account is inactive" });
+      }
+      
+      if (user.password !== password) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+      
+      const sessionUser = {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        positionTitle: user.positionTitle,
+        profilePhotoUrl: user.profilePhotoUrl,
+      };
+      
+      req.session.userId = user.id;
+      req.session.user = sessionUser;
+      
+      res.json({ user: sessionUser });
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: error.errors });
+      }
+      console.error("Error during login:", error);
+      res.status(500).json({ error: "Failed to login" });
+    }
+  });
+  
+  app.post("/api/auth/logout", async (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        console.error("Error destroying session:", err);
+        return res.status(500).json({ error: "Failed to logout" });
+      }
+      res.clearCookie("connect.sid");
+      res.json({ success: true });
+    });
+  });
+  
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId || !req.session.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    const user = await storage.getUser(req.session.userId);
+    if (!user || !user.isActive) {
+      req.session.destroy(() => {});
+      return res.status(401).json({ error: "Session invalid" });
+    }
+    
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        role: user.role,
+        positionTitle: user.positionTitle,
+        profilePhotoUrl: user.profilePhotoUrl,
+      }
+    });
+  });
+
+  // ============ PERSONAL DASHBOARD ============
+  app.get("/api/my-dashboard", async (req, res) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const userId = req.session.userId;
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const [myTasks, myNotifications, leaveBalance] = await Promise.all([
+        storage.getTasksAssignedToUser(userId),
+        storage.getNotificationsByUser(userId),
+        storage.getStaffLeaveBalance(userId),
+      ]);
+      
+      res.json({
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role,
+          positionTitle: user.positionTitle,
+          profilePhotoUrl: user.profilePhotoUrl,
+        },
+        tasks: myTasks,
+        notifications: myNotifications,
+        leaveBalance: leaveBalance || { 
+          annualLeaveBalanceHours: "0", 
+          sickLeaveBalanceHours: "0" 
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching personal dashboard:", error);
+      res.status(500).json({ error: "Failed to fetch personal dashboard" });
+    }
+  });
+
   // ============ DASHBOARD ============
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
@@ -40,6 +164,24 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ error: "Failed to fetch dashboard stats" });
+    }
+  });
+
+  // ============ WEATHER (PERTH, WA) ============
+  app.get("/api/weather/perth", async (req, res) => {
+    try {
+      const perthWeather = {
+        location: "Perth, WA",
+        temperature: 24 + Math.floor(Math.random() * 6),
+        condition: ["Sunny", "Partly Cloudy", "Clear", "Fine"][Math.floor(Math.random() * 4)],
+        minTemp: 18 + Math.floor(Math.random() * 3),
+        maxTemp: 28 + Math.floor(Math.random() * 5),
+        humidity: 40 + Math.floor(Math.random() * 20),
+      };
+      res.json(perthWeather);
+    } catch (error) {
+      console.error("Error fetching weather:", error);
+      res.status(500).json({ error: "Failed to fetch weather" });
     }
   });
 

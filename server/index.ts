@@ -1,7 +1,10 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import type { User } from "@shared/schema";
 
 const app = express();
 const httpServer = createServer(app);
@@ -11,6 +14,31 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+declare module "express-session" {
+  interface SessionData {
+    userId: string;
+    user: Pick<User, "id" | "username" | "email" | "firstName" | "lastName" | "role" | "positionTitle" | "profilePhotoUrl">;
+  }
+}
+
+const MemStore = MemoryStore(session);
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "probuild-pvc-secret-key-change-in-production",
+    resave: false,
+    saveUninitialized: false,
+    store: new MemStore({
+      checkPeriod: 86400000,
+    }),
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      httpOnly: true,
+      maxAge: 24 * 60 * 60 * 1000,
+    },
+  })
+);
 
 app.use(
   express.json({

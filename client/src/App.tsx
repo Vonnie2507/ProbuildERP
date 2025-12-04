@@ -1,4 +1,4 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -8,7 +8,11 @@ import { ThemeProvider } from "@/components/layout/ThemeProvider";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Header } from "@/components/layout/Header";
 import { NewMessageBanner } from "@/components/layout/NewMessageBanner";
+import { AuthProvider, useAuth } from "@/hooks/use-auth";
+import { Loader2 } from "lucide-react";
 
+import Login from "@/pages/Login";
+import MyDashboard from "@/pages/MyDashboard";
 import Dashboard from "@/pages/Dashboard";
 import Leads from "@/pages/Leads";
 import Quotes from "@/pages/Quotes";
@@ -62,112 +66,199 @@ function TradeLayout({ children }: { children: React.ReactNode }) {
   return <div className="h-screen overflow-auto">{children}</div>;
 }
 
-function Router() {
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [location] = useLocation();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Redirect to="/login" />;
+  }
+
+  return <>{children}</>;
+}
+
+function AuthenticatedRouter() {
   return (
     <Switch>
+      <Route path="/login">
+        <LoginRedirect />
+      </Route>
       <Route path="/">
-        <MainLayout>
-          <Dashboard />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <MyDashboard />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/business-dashboard">
+        <ProtectedRoute>
+          <MainLayout>
+            <Dashboard />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/leads">
-        <MainLayout>
-          <Leads />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Leads />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/quotes">
-        <MainLayout>
-          <Quotes />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Quotes />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/jobs">
-        <MainLayout>
-          <Jobs />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Jobs />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/clients">
-        <MainLayout>
-          <Clients />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Clients />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/production">
-        <MainLayout>
-          <Production />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Production />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/schedule">
-        <MainLayout>
-          <Schedule />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Schedule />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/inventory">
-        <MainLayout>
-          <Inventory />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Inventory />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/payments">
-        <MainLayout>
-          <Payments />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Payments />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/messages">
-        <MainLayout>
-          <Messages />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <Messages />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/quote-analytics">
-        <MainLayout>
-          <QuoteAnalytics />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <QuoteAnalytics />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/automation">
-        <MainLayout>
-          <AutomationCampaigns />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <AutomationCampaigns />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/installer">
-        <InstallerLayout>
-          <Installer />
-        </InstallerLayout>
+        <ProtectedRoute>
+          <InstallerLayout>
+            <Installer />
+          </InstallerLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/trade">
-        <TradeLayout>
-          <Trade />
-        </TradeLayout>
+        <ProtectedRoute>
+          <TradeLayout>
+            <Trade />
+          </TradeLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/organisation/departments">
-        <MainLayout>
-          <OrganisationDepartments />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <OrganisationDepartments />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/organisation/workflows">
-        <MainLayout>
-          <OrganisationWorkflows />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <OrganisationWorkflows />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/organisation/policies">
-        <MainLayout>
-          <OrganisationPolicies />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <OrganisationPolicies />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/organisation/resources">
-        <MainLayout>
-          <OrganisationResources />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <OrganisationResources />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/organisation/knowledge">
-        <MainLayout>
-          <OrganisationKnowledge />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <OrganisationKnowledge />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route path="/live-doc-templates">
-        <MainLayout>
-          <LiveDocTemplates />
-        </MainLayout>
+        <ProtectedRoute>
+          <MainLayout>
+            <LiveDocTemplates />
+          </MainLayout>
+        </ProtectedRoute>
       </Route>
       <Route component={NotFound} />
     </Switch>
   );
+}
+
+function LoginRedirect() {
+  const { isAuthenticated, isLoading } = useAuth();
+  
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+  
+  if (isAuthenticated) {
+    return <Redirect to="/" />;
+  }
+  
+  return <Login />;
 }
 
 function App() {
@@ -175,8 +266,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="light" storageKey="probuild-theme">
         <TooltipProvider>
-          <Toaster />
-          <Router />
+          <AuthProvider>
+            <Toaster />
+            <AuthenticatedRouter />
+          </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

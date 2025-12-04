@@ -230,6 +230,21 @@ export const users = pgTable("users", {
   role: userRoleEnum("role").notNull().default("sales"),
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Staff profile fields
+  positionTitle: text("position_title"),
+  profilePhotoUrl: text("profile_photo_url"),
+});
+
+// Staff Leave Balances table
+export const staffLeaveBalances = pgTable("staff_leave_balances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id).notNull().unique(),
+  annualLeaveBalanceHours: decimal("annual_leave_balance_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  sickLeaveBalanceHours: decimal("sick_leave_balance_hours", { precision: 10, scale: 2 }).notNull().default("0"),
+  upcomingLeaveStart: timestamp("upcoming_leave_start"),
+  upcomingLeaveEnd: timestamp("upcoming_leave_end"),
+  upcomingLeaveType: text("upcoming_leave_type"), // 'annual' | 'sick' | 'other'
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 // Clients table
@@ -1093,6 +1108,11 @@ export const insertUserSchema = createInsertSchema(users).omit({
   createdAt: true,
 });
 
+export const insertStaffLeaveBalanceSchema = createInsertSchema(staffLeaveBalances).omit({
+  id: true,
+  updatedAt: true,
+});
+
 export const insertClientSchema = createInsertSchema(clients).omit({
   id: true,
   createdAt: true,
@@ -1252,6 +1272,9 @@ export const insertQuotePLSummarySchema = createInsertSchema(quotePLSummary).omi
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+export type InsertStaffLeaveBalance = z.infer<typeof insertStaffLeaveBalanceSchema>;
+export type StaffLeaveBalance = typeof staffLeaveBalances.$inferSelect;
 
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;

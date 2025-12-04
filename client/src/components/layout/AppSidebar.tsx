@@ -1,5 +1,6 @@
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import {
   LayoutDashboard,
   Users,
@@ -23,6 +24,8 @@ import {
   FolderOpen,
   BookOpen,
   FileStack,
+  User,
+  TrendingUp,
 } from "lucide-react";
 import {
   Sidebar,
@@ -40,7 +43,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
 const mainNavItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "My Dashboard", url: "/", icon: User },
+  { title: "Business Dashboard", url: "/business-dashboard", icon: TrendingUp },
   { title: "Leads", url: "/leads", icon: FileText },
   { title: "Quotes", url: "/quotes", icon: ClipboardList },
   { title: "Jobs", url: "/jobs", icon: Briefcase },
@@ -82,6 +86,59 @@ const organisationItems = [
   { title: "Resources", url: "/organisation/resources", icon: FolderOpen },
   { title: "Knowledge Base", url: "/organisation/knowledge", icon: BookOpen },
 ];
+
+function formatRoleDisplay(role: string): string {
+  const roleMap: Record<string, string> = {
+    admin: "Administrator",
+    sales: "Sales",
+    scheduler: "Scheduler",
+    production_manager: "Production Manager",
+    warehouse: "Warehouse",
+    installer: "Installer",
+    trade_client: "Trade Client",
+  };
+  return roleMap[role] || role;
+}
+
+function UserSection() {
+  const { user, logout } = useAuth();
+  const [, setLocation] = useLocation();
+  
+  const initials = user 
+    ? `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase() 
+    : 'U';
+  
+  const handleLogout = async () => {
+    await logout();
+    setLocation("/login");
+  };
+  
+  return (
+    <div className="flex items-center gap-3">
+      <Avatar className="h-8 w-8">
+        <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
+          {initials}
+        </AvatarFallback>
+      </Avatar>
+      <div className="flex flex-1 flex-col">
+        <span className="text-sm font-medium text-sidebar-foreground" data-testid="text-user-name">
+          {user ? `${user.firstName} ${user.lastName}` : 'Guest'}
+        </span>
+        <span className="text-xs text-sidebar-foreground/70">
+          {user?.positionTitle || formatRoleDisplay(user?.role || 'user')}
+        </span>
+      </div>
+      <SidebarMenuButton 
+        size="sm" 
+        className="h-8 w-8" 
+        onClick={handleLogout}
+        data-testid="button-logout"
+      >
+        <LogOut className="h-4 w-4" />
+      </SidebarMenuButton>
+    </div>
+  );
+}
 
 export function AppSidebar() {
   const [location] = useLocation();
@@ -269,20 +326,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter className="p-4">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-sidebar-accent text-sidebar-accent-foreground text-xs">
-              VB
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-1 flex-col">
-            <span className="text-sm font-medium text-sidebar-foreground">Vonnie Bradley</span>
-            <span className="text-xs text-sidebar-foreground/70">Admin</span>
-          </div>
-          <SidebarMenuButton size="sm" className="h-8 w-8" data-testid="button-settings">
-            <Settings className="h-4 w-4" />
-          </SidebarMenuButton>
-        </div>
+        <UserSection />
       </SidebarFooter>
     </Sidebar>
   );

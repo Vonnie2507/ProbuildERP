@@ -1,0 +1,218 @@
+12. STAFF LOGIN & PERSONAL DASHBOARD
+
+You must implement a staff login system and a personalised staff dashboard for the “Probuild PVC ERP & CRM”.
+
+Each staff member logs in with their own account and sees:
+	•	Their own to-do list
+	•	Their own messages/notifications
+	•	Their own KPIs / targets / mini-reports (based on role)
+	•	Weather widget for Perth, WA
+	•	Their own leave balances (annual + sick)
+	•	Optional: quick access shortcuts relevant to their role
+
+This replaces the idea of a generic home screen. The entry point after login is always: “My Dashboard”.
+
+⸻
+
+12.1 Staff / User Model
+
+If not already present, create or extend a User or Staff entity with at least:
+	•	id
+	•	name
+	•	email
+	•	password_hash (use existing auth pattern)
+	•	role (e.g. admin, sales, scheduler, production, installer, warehouse, accounts)
+	•	is_active
+	•	Optional profile:
+	•	position_title
+	•	profile_photo_url
+	•	default_dashboard_view (optional future)
+	•	preferred_start_page (optional future)
+
+Link existing entities to User where appropriate (Tasks, Activities, Jobs assigned, etc.), if not already done.
+
+⸻
+
+12.2 Authentication & Session
+	•	Implement a login screen where staff enter email + password.
+	•	On successful login:
+	•	Store a session/token as per existing project standards.
+	•	Redirect to /dashboard (or equivalent).
+	•	On logout:
+	•	Clear session/token and redirect to login screen.
+
+Use standard secure practices (no plain text passwords, etc.).
+
+⸻
+
+12.3 Personal Dashboard Layout
+
+After login, each user sees their own dashboard.
+
+Suggested structure:
+	•	Top area (header):
+	•	Greeting, e.g. “Good morning, Vonnie”
+	•	Role or position (e.g. “Sales & Director”)
+	•	Today’s date
+	•	Main content is widget-based, roughly split into:
+	1.	My To-Do List (Tasks)
+	2.	My Messages / Notifications
+	3.	My KPIs / Mini-Reports (role-based)
+	4.	Weather – Perth, WA
+	5.	My Leave Balances
+
+Make the layout responsive but uncluttered – each widget clearly separated, no text crammed together.
+
+⸻
+
+12.4 Widget: My To-Do List
+
+Pull from the existing Task system.
+	•	Show tasks assigned to the logged-in user only.
+	•	Default view:
+	•	Overdue
+	•	Due today
+	•	Upcoming (e.g. next 7 days)
+
+For each task, display:
+	•	Title
+	•	Related object (e.g. Lead PVC-001, Job PVC-021, Call from [Client])
+	•	Due date
+	•	Status (Not started / In progress / Done)
+
+Actions:
+	•	Mark as complete (checkbox or button)
+	•	Quick link to open the related Lead/Job/Call
+	•	Ability to create a new task directly from the dashboard
+
+⸻
+
+12.5 Widget: My Messages / Notifications
+
+Create a simple notification feed per user.
+
+Sources could include:
+	•	Tasks assigned to them
+	•	Call logs assigned to them (“You handled a call from…”)
+	•	Jobs assigned or reassigned
+	•	System alerts (e.g. “Job PVC-010 is now ready for install checklist”)
+
+Each notification entry should show:
+	•	Type (icon)
+	•	Short description
+	•	Time stamp
+	•	“Open” link (to Lead/Job/Call/etc.)
+
+Allow users to mark notifications as read.
+
+This can initially live as a simple Notification model:
+	•	id
+	•	user_id
+	•	type
+	•	message
+	•	related_entity_type / related_entity_id
+	•	created_at
+	•	read_at (nullable)
+
+⸻
+
+12.6 Widget: My KPIs / Mini-Reports (Role-Based)
+
+This widget should change depending on the staff member’s role.
+
+Examples:
+	•	Sales:
+	•	Quotes sent this week / month
+	•	Quotes approved / conversion rate
+	•	Follow-ups due
+	•	Scheduler:
+	•	Jobs scheduled today / this week
+	•	Jobs not ready due to missing Job Setup sections
+	•	Production:
+	•	Jobs currently in production
+	•	Jobs due out this week
+	•	Installers:
+	•	Jobs assigned today/tomorrow
+	•	Outstanding installer checklists
+
+Implementation:
+	•	Create a simple service that, given user.role, returns a small set of KPI metrics.
+	•	Display each metric as a card with:
+	•	Label
+	•	Value
+	•	Period (e.g. “This week”, “This month”)
+
+You don’t need a full BI system – just a few key numbers to start.
+
+⸻
+
+12.7 Widget: Weather – Perth, WA
+
+On the dashboard, show a simple weather card for Perth, Western Australia:
+	•	Today’s conditions:
+	•	Temperature (current)
+	•	Condition (e.g. Sunny, Cloudy, Showers)
+	•	Optionally today’s min/max
+
+Implementation:
+	•	Create a Weather service that:
+	•	Uses a placeholder stub now
+	•	OR connects to a real weather API later (e.g. OpenWeather, BOM, etc.)
+	•	For now, it is enough to structure the code so that:
+	•	The dashboard calls getWeather("Perth, WA")
+	•	Displays the response in a small card.
+
+The key requirement is: every staff member sees the same Perth weather on their dashboard.
+
+⸻
+
+12.8 Widget: My Leave Balances (Annual & Sick)
+
+Add a simple HR/Leave model or connect to existing one:
+	•	user_id
+	•	annual_leave_balance_hours (or days)
+	•	sick_leave_balance_hours (or days)
+	•	Optional:
+	•	upcoming_leave (next approved leave range)
+
+On the dashboard, show:
+	•	“Annual Leave Remaining: X days”
+	•	“Sick Leave Remaining: Y days”
+	•	If upcoming leave exists:
+	•	“Next leave: 12–16 Dec (Annual)”
+
+This is view-only for most staff. Admin/Accounts can edit leave balances elsewhere in the system.
+
+⸻
+
+12.9 Security & Permissions
+	•	Only logged-in users can access the dashboard.
+	•	Everything shown must be filtered by the current user:
+	•	Tasks
+	•	Notifications
+	•	KPIs
+	•	Leave balances
+	•	Admin users may have a different dashboard or a toggle to view “My Dashboard” vs “Admin overview”, but that can be a later extension.
+
+⸻
+
+12.10 Future Extensions (Design For, Don’t Build Fully Yet)
+
+Structure the code so we can later add:
+	•	Quick links (e.g. “Create New Lead”, “Open Today’s Jobs”).
+	•	Personal preferences (reordering/hiding widgets).
+	•	Direct integration with the call log (e.g. “Calls I handled today”).
+
+For now, focus on:
+	•	Clean login
+	•	Per-user dashboard
+	•	Task list
+	•	Notifications
+	•	Role-based KPIs
+	•	Perth weather
+	•	Leave balances
+
+⸻
+
+End of staff dashboard spec.
+Please implement staff login and a personalised dashboard page as described, wired to the existing user/role system, tasks, and activity models. The dashboard must always reflect the currently logged-in user.

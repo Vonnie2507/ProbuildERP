@@ -10,8 +10,9 @@ import {
   departments, workflows, workflowVersions, policies, policyVersions,
   policyAcknowledgements, resources, knowledgeArticles,
   jobSetupDocuments, jobSetupProducts, liveDocumentTemplates,
-  leadActivities, leadTasks,
+  leadActivities, leadTasks, staffLeaveBalances,
   type User, type InsertUser,
+  type StaffLeaveBalance, type InsertStaffLeaveBalance,
   type Client, type InsertClient,
   type Lead, type InsertLead,
   type FenceStyle, type InsertFenceStyle,
@@ -98,9 +99,15 @@ export interface IStorage {
 
   // Lead Tasks
   getLeadTasks(leadId: string): Promise<LeadTask[]>;
+  getTasksAssignedToUser(userId: string): Promise<LeadTask[]>;
   createLeadTask(task: InsertLeadTask): Promise<LeadTask>;
   updateLeadTask(id: string, task: Partial<InsertLeadTask>): Promise<LeadTask | undefined>;
   deleteLeadTask(id: string): Promise<boolean>;
+
+  // Staff Leave Balances
+  getStaffLeaveBalance(userId: string): Promise<StaffLeaveBalance | undefined>;
+  createStaffLeaveBalance(balance: InsertStaffLeaveBalance): Promise<StaffLeaveBalance>;
+  updateStaffLeaveBalance(userId: string, balance: Partial<InsertStaffLeaveBalance>): Promise<StaffLeaveBalance | undefined>;
 
   // Fence Styles
   getFenceStyle(id: string): Promise<FenceStyle | undefined>;
@@ -665,6 +672,32 @@ export class DatabaseStorage implements IStorage {
   async deleteLeadTask(id: string): Promise<boolean> {
     const result = await db.delete(leadTasks).where(eq(leadTasks.id, id));
     return true;
+  }
+
+  async getTasksAssignedToUser(userId: string): Promise<LeadTask[]> {
+    return db.select().from(leadTasks)
+      .where(eq(leadTasks.assignedTo, userId))
+      .orderBy(desc(leadTasks.dueDate));
+  }
+
+  // Staff Leave Balances
+  async getStaffLeaveBalance(userId: string): Promise<StaffLeaveBalance | undefined> {
+    const [balance] = await db.select().from(staffLeaveBalances)
+      .where(eq(staffLeaveBalances.userId, userId));
+    return balance;
+  }
+
+  async createStaffLeaveBalance(balance: InsertStaffLeaveBalance): Promise<StaffLeaveBalance> {
+    const [newBalance] = await db.insert(staffLeaveBalances).values(balance).returning();
+    return newBalance;
+  }
+
+  async updateStaffLeaveBalance(userId: string, balance: Partial<InsertStaffLeaveBalance>): Promise<StaffLeaveBalance | undefined> {
+    const [updated] = await db.update(staffLeaveBalances)
+      .set({ ...balance, updatedAt: new Date() })
+      .where(eq(staffLeaveBalances.userId, userId))
+      .returning();
+    return updated;
   }
 
   // Fence Styles
