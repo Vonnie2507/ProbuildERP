@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { JobCard } from "@/components/jobs/JobCard";
 import { JobTimeline } from "@/components/jobs/JobTimeline";
 import { JobSetupDocument } from "@/components/jobs/JobSetupDocument";
+import { JobKanbanBoard } from "@/components/jobs/JobKanbanBoard";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -51,10 +52,12 @@ import {
   Pencil,
   Trash2,
   Download,
+  List,
+  LayoutGrid,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Job, Client, ProductionTask } from "@shared/schema";
+import type { Job, Client, ProductionTask, User } from "@shared/schema";
 
 type JobStatus = "in_progress" | "production" | "ready" | "scheduled" | "complete";
 
@@ -81,6 +84,8 @@ interface DisplayJob {
   balanceDue: number;
 }
 
+type ViewMode = "list" | "kanban";
+
 export default function Jobs() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -88,6 +93,7 @@ export default function Jobs() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [formData, setFormData] = useState({
     status: "",
     notes: "",
@@ -96,6 +102,10 @@ export default function Jobs() {
 
   const { data: jobs = [], isLoading: jobsLoading } = useQuery<Job[]>({
     queryKey: ["/api/jobs"],
+  });
+
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
   });
 
   const updateJobMutation = useMutation({
@@ -304,11 +314,105 @@ export default function Jobs() {
     setSelectedJobId(job.id);
   };
 
+  const handleKanbanJobClick = (job: Job) => {
+    setSelectedJobId(job.id);
+    setViewMode("list");
+  };
+
+  if (viewMode === "kanban") {
+    return (
+      <div className="flex flex-col h-[calc(100vh-3.5rem)]" data-testid="jobs-kanban-view">
+        <div className="p-4 border-b flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold" data-testid="text-jobs-title">Jobs</h1>
+            <div className="relative max-w-xs">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search jobs..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-jobs"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex border rounded-md">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={viewMode === "list" ? "bg-muted" : ""}
+                onClick={() => setViewMode("list")}
+                data-testid="button-view-list"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={viewMode === "kanban" ? "bg-muted" : ""}
+                onClick={() => setViewMode("kanban")}
+                data-testid="button-view-kanban"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </div>
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={() => window.open("/api/export/jobs", "_blank")}
+              data-testid="button-export-jobs"
+            >
+              <Download className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <JobKanbanBoard
+            jobs={searchQuery 
+              ? jobs.filter(j => 
+                  j.jobNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  clients.find(c => c.id === j.clientId)?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+              : jobs
+            }
+            clients={clients}
+            users={users}
+            isLoading={jobsLoading}
+            onJobClick={handleKanbanJobClick}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-[calc(100vh-3.5rem)]">
       <div className="w-96 border-r flex flex-col">
         <div className="p-4 border-b space-y-4">
-          <h1 className="text-xl font-semibold" data-testid="text-jobs-title">Jobs</h1>
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-xl font-semibold" data-testid="text-jobs-title">Jobs</h1>
+            <div className="flex border rounded-md">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={viewMode === "list" ? "bg-muted" : ""}
+                onClick={() => setViewMode("list")}
+                data-testid="button-view-list"
+              >
+                <List className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={viewMode === "kanban" ? "bg-muted" : ""}
+                onClick={() => setViewMode("kanban")}
+                data-testid="button-view-kanban"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input

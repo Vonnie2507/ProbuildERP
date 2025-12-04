@@ -423,6 +423,10 @@ export const jobs = pgTable("jobs", {
   installerNotes: text("installer_notes"),
   variationNotes: text("variation_notes"),
   photos: jsonb("photos").$type<JobPhoto[]>(),
+  hasGate: boolean("has_gate").default(false),
+  isDelayed: boolean("is_delayed").default(false),
+  isWaitingOnClient: boolean("is_waiting_on_client").default(false),
+  stagesCompleted: jsonb("stages_completed").$type<number[]>().default([]),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
