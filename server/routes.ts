@@ -4447,5 +4447,247 @@ export async function registerRoutes(
     }
   });
 
+  // ============ IMPORT DATA ============
+  
+  // Import clients
+  app.post("/api/import/clients", async (req, res) => {
+    try {
+      const { data } = req.body;
+      if (!Array.isArray(data)) {
+        return res.status(400).json({ error: "Data must be an array" });
+      }
+
+      let success = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (const row of data) {
+        try {
+          const clientData = {
+            name: row.name?.trim() || "",
+            email: row.email?.trim() || null,
+            phone: row.phone?.trim() || null,
+            address: row.address?.trim() || null,
+            clientType: (row.clientType === "trade" ? "trade" : "public") as "public" | "trade",
+            companyName: row.companyName?.trim() || null,
+            abn: row.abn?.trim() || null,
+          };
+
+          if (!clientData.name) {
+            errors.push(`Row missing name`);
+            failed++;
+            continue;
+          }
+
+          await storage.createClient(clientData);
+          success++;
+        } catch (err) {
+          failed++;
+          errors.push(`Failed to import client: ${row.name || 'unknown'}`);
+        }
+      }
+
+      res.json({ success, failed, errors });
+    } catch (error) {
+      console.error("Error importing clients:", error);
+      res.status(500).json({ error: "Failed to import clients" });
+    }
+  });
+
+  // Import leads (creates client if doesn't exist)
+  app.post("/api/import/leads", async (req, res) => {
+    try {
+      const { data } = req.body;
+      if (!Array.isArray(data)) {
+        return res.status(400).json({ error: "Data must be an array" });
+      }
+
+      let success = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (const row of data) {
+        try {
+          const clientName = row.clientName?.trim();
+          const siteAddress = row.siteAddress?.trim();
+
+          if (!clientName || !siteAddress) {
+            errors.push(`Row missing clientName or siteAddress`);
+            failed++;
+            continue;
+          }
+
+          // Find or create client
+          let client = await storage.getClientByEmail(row.clientEmail?.trim());
+          if (!client && row.clientPhone?.trim()) {
+            const clients = await storage.getClients();
+            client = clients.find(c => c.phone === row.clientPhone?.trim()) || null;
+          }
+
+          if (!client) {
+            const clientData = {
+              name: clientName,
+              email: row.clientEmail?.trim() || null,
+              phone: row.clientPhone?.trim() || null,
+              address: null,
+              clientType: (row.leadType === "trade" ? "trade" : "public") as "public" | "trade",
+              companyName: null,
+              abn: null,
+            };
+            client = await storage.createClient(clientData);
+          }
+
+          // Parse source value
+          const validSources = ["website", "phone", "referral", "trade_account", "walk_in", "other"];
+          const source = validSources.includes(row.source?.toLowerCase()) 
+            ? row.source.toLowerCase() 
+            : "other";
+
+          // Parse leadType
+          const leadType = row.leadType === "trade" ? "trade" : "public";
+
+          // Parse jobFulfillmentType
+          const validFulfillment = ["supply_install", "supply_only"];
+          const jobFulfillmentType = validFulfillment.includes(row.jobFulfillmentType?.toLowerCase())
+            ? row.jobFulfillmentType.toLowerCase()
+            : "supply_install";
+
+          const leadData = {
+            clientId: client.id,
+            source: source as any,
+            leadType: leadType as any,
+            jobFulfillmentType: jobFulfillmentType as any,
+            description: row.description?.trim() || null,
+            siteAddress,
+            measurementsProvided: false,
+            fenceLength: row.fenceLength?.trim() || null,
+            fenceStyle: row.fenceStyle?.trim() || null,
+            stage: "new" as const,
+            assignedTo: null,
+            followUpDate: null,
+            notes: null,
+          };
+
+          await storage.createLead(leadData);
+          success++;
+        } catch (err) {
+          failed++;
+          errors.push(`Failed to import lead for: ${row.clientName || 'unknown'}`);
+        }
+      }
+
+      res.json({ success, failed, errors });
+    } catch (error) {
+      console.error("Error importing leads:", error);
+      res.status(500).json({ error: "Failed to import leads" });
+    }
+  });
+
+  // Import jobs (creates client and lead if doesn't exist)
+  app.post("/api/import/jobs", async (req, res) => {
+    try {
+      const { data } = req.body;
+      if (!Array.isArray(data)) {
+        return res.status(400).json({ error: "Data must be an array" });
+      }
+
+      let success = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      for (const row of data) {
+        try {
+          const clientName = row.clientName?.trim();
+          const siteAddress = row.siteAddress?.trim();
+
+          if (!clientName || !siteAddress) {
+            errors.push(`Row missing clientName or siteAddress`);
+            failed++;
+            continue;
+          }
+
+          // Find or create client
+          let client = await storage.getClientByEmail(row.clientEmail?.trim());
+          if (!client && row.clientPhone?.trim()) {
+            const clients = await storage.getClients();
+            client = clients.find(c => c.phone === row.clientPhone?.trim()) || null;
+          }
+
+          if (!client) {
+            const clientData = {
+              name: clientName,
+              email: row.clientEmail?.trim() || null,
+              phone: row.clientPhone?.trim() || null,
+              address: siteAddress,
+              clientType: "public" as const,
+              companyName: null,
+              abn: null,
+            };
+            client = await storage.createClient(clientData);
+          }
+
+          // Parse job type
+          const validJobTypes = ["supply_install", "supply_only"];
+          const jobType = validJobTypes.includes(row.jobType?.toLowerCase())
+            ? row.jobType.toLowerCase()
+            : "supply_install";
+
+          // Parse job status  
+          const validStatuses = ["pending", "awaiting_deposit", "in_production", "ready_for_install", "scheduled", "installing", "completed", "on_hold", "cancelled"];
+          const status = validStatuses.includes(row.status?.toLowerCase())
+            ? row.status.toLowerCase()
+            : "pending";
+
+          // Create a lead for the job
+          const leadData = {
+            clientId: client.id,
+            source: "other" as const,
+            leadType: "public" as const,
+            jobFulfillmentType: jobType as any,
+            description: row.notes?.trim() || "Imported job",
+            siteAddress,
+            measurementsProvided: !!row.fenceLength,
+            fenceLength: row.fenceLength?.trim() || null,
+            fenceStyle: row.fenceStyle?.trim() || null,
+            stage: "won" as const,
+            assignedTo: null,
+            followUpDate: null,
+            notes: null,
+          };
+
+          const lead = await storage.createLead(leadData);
+
+          // Create the job
+          const jobData = {
+            leadId: lead.id,
+            clientId: client.id,
+            jobType: jobType as any,
+            siteAddress,
+            fenceLength: row.fenceLength?.trim() || null,
+            fenceStyle: row.fenceStyle?.trim() || null,
+            status: status as any,
+            assignedTeam: null,
+            scheduledDate: null,
+            notes: row.notes?.trim() || null,
+            depositPaid: false,
+            depositAmount: null,
+            totalAmount: null,
+          };
+
+          await storage.createJob(jobData);
+          success++;
+        } catch (err) {
+          failed++;
+          errors.push(`Failed to import job for: ${row.clientName || 'unknown'}`);
+        }
+      }
+
+      res.json({ success, failed, errors });
+    } catch (error) {
+      console.error("Error importing jobs:", error);
+      res.status(500).json({ error: "Failed to import jobs" });
+    }
+  });
+
   return httpServer;
 }

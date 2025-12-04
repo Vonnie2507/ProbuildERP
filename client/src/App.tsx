@@ -35,6 +35,7 @@ import OrganisationPolicies from "@/pages/organisation/Policies";
 import OrganisationResources from "@/pages/organisation/Resources";
 import OrganisationKnowledge from "@/pages/organisation/Knowledge";
 import LiveDocTemplates from "@/pages/LiveDocTemplates";
+import Import from "@/pages/Import";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -235,6 +236,13 @@ function AuthenticatedRouter() {
         <ProtectedRoute>
           <MainLayout>
             <LiveDocTemplates />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/import">
+        <ProtectedRoute>
+          <MainLayout>
+            <Import />
           </MainLayout>
         </ProtectedRoute>
       </Route>

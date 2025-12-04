@@ -26,6 +26,7 @@ import {
   FileStack,
   User,
   TrendingUp,
+  Upload,
 } from "lucide-react";
 import {
   Sidebar,
@@ -65,6 +66,7 @@ const financeItems = [
 const analyticsItems = [
   { title: "Quote Analytics", url: "/quote-analytics", icon: BarChart3 },
   { title: "Automation", url: "/automation", icon: Zap },
+  { title: "Import Data", url: "/import", icon: Upload },
 ];
 
 const installerItems = [
