@@ -37,7 +37,14 @@ The system employs a modern web architecture with a clear separation of concerns
 -   **Call Log & Transcription System:** Full call logging with direction (inbound/outbound/missed), duration tracking, notes, and collapsible detail panels. Supports creating tasks linked to specific calls. Prepared for future AI transcription integration.
 -   **Specialized Applications:** Features a dedicated Installer Mobile App and a Trade Client Portal for self-service.
 -   **Hierarchical Numbering:** Implements a strict hierarchical numbering system for Leads (`PVC-XXX`), Quotes (`PVC-XXX-Q#`), Jobs (`PVC-XXX-JOB`), and Invoices (`PVC-XXX-INV`) to ensure consistent tracking and data linkage.
--   **Role-Based Access Control:** Supports 7 distinct user roles (admin, sales, scheduler, production_manager, warehouse, installer, trade_client) with granular permissions.
+-   **Role-Based Access Control:** Comprehensive RBAC implementation with:
+    -   7 distinct user roles: admin, sales, scheduler, production_manager, warehouse, installer, trade_client
+    -   Centralized permissions configuration in `client/src/lib/permissions.ts`
+    -   Frontend sidebar filtering based on user role
+    -   Frontend route protection with unauthorized page redirect
+    -   Backend API protection via `requireRoles` middleware on all sensitive endpoints
+    -   Trade clients automatically redirected to `/trade` portal
+    -   Role-specific route access: admin (full), sales (leads/quotes/clients), scheduler (jobs/schedule), production_manager (jobs/production/inventory), warehouse (production/inventory), installer (installer app), trade_client (trade portal only)
 -   **Live Document System:** Manages dynamic job setup and handover documents, with template support and lead-level access.
 -   **Analytics & Automation:** Incorporates Quote Analytics Dashboard and configurable Automation Campaigns for SMS, triggered by various business events.
 -   **Internal Management:** Features an "Organisation Hub" for managing departments, workflows, policies, resources, and a knowledge base.
