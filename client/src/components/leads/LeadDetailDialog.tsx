@@ -5,7 +5,7 @@ import { format } from "date-fns";
 import { 
   Phone, Mail, MapPin, FileText, Edit, Plus, Clock, Calendar, 
   CheckCircle2, CircleDashed, MessageSquare, PhoneCall, Send,
-  ChevronRight, ClipboardList, AlertCircle, User
+  ChevronRight, ClipboardList, AlertCircle, User, PhoneIncoming, PhoneOutgoing, PhoneMissed
 } from "lucide-react";
 import {
   Dialog,
@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { JobSetupDocument } from "@/components/jobs/JobSetupDocument";
+import { CallLogEntry } from "./CallLogEntry";
 import type { Lead, Client, Quote, LeadActivity, LeadTask, User as UserType, LiveDocumentTemplate, JobSetupDocument as JobSetupDocumentType } from "@shared/schema";
 
 interface LeadDetailDialogProps {
@@ -91,6 +92,12 @@ export function LeadDetailDialog({
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<string>("medium");
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>("");
+  
+  const [showLogCallForm, setShowLogCallForm] = useState(false);
+  const [callDirection, setCallDirection] = useState<string>("outbound");
+  const [callDuration, setCallDuration] = useState<string>("");
+  const [callNotes, setCallNotes] = useState("");
+  const [linkingTaskToCallId, setLinkingTaskToCallId] = useState<string | null>(null);
 
   const { data: activities = [] } = useQuery<LeadActivity[]>({
     queryKey: ["/api/leads", lead?.id, "activities"],
@@ -156,6 +163,51 @@ export function LeadDetailDialog({
     },
   });
 
+  const logCallMutation = useMutation({
+    mutationFn: async (data: {
+      activityType: string;
+      title: string;
+      callDirection: string;
+      callTimestamp: string;
+      callDurationSeconds?: number;
+      callNotes?: string;
+    }) => {
+      return apiRequest("POST", `/api/leads/${lead?.id}/activities`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", lead?.id, "activities"] });
+      setShowLogCallForm(false);
+      setCallDirection("outbound");
+      setCallDuration("");
+      setCallNotes("");
+      toast({ title: "Call logged successfully" });
+    },
+    onError: (error) => {
+      console.error("Error logging call:", error);
+      toast({ title: "Failed to log call", variant: "destructive" });
+    },
+  });
+
+  const addTaskWithCallLinkMutation = useMutation({
+    mutationFn: async (data: { title: string; priority: string; sourceActivityId?: string }) => {
+      return apiRequest("POST", `/api/leads/${lead?.id}/tasks`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads", lead?.id, "tasks"] });
+      if (linkingTaskToCallId) {
+        queryClient.invalidateQueries({ queryKey: ["/api/lead-activities", linkingTaskToCallId, "tasks"] });
+      }
+      setNewTaskTitle("");
+      setNewTaskPriority("medium");
+      setLinkingTaskToCallId(null);
+      toast({ title: "Task created from call" });
+    },
+    onError: (error) => {
+      console.error("Error adding task:", error);
+      toast({ title: "Failed to add task", variant: "destructive" });
+    },
+  });
+
   const handleAddNote = () => {
     if (!newNote.trim()) return;
     addActivityMutation.mutate({
@@ -174,11 +226,35 @@ export function LeadDetailDialog({
   };
 
   const handleLogCall = () => {
-    addActivityMutation.mutate({
-      activityType: "call_logged",
-      title: "Call Logged",
-      description: "Phone call with client",
+    const parsedDuration = callDuration ? parseInt(callDuration) * 60 : undefined;
+    const directionLabel = callDirection === "inbound" ? "Inbound Call" : 
+                          callDirection === "outbound" ? "Outbound Call" : "Missed Call";
+    
+    logCallMutation.mutate({
+      activityType: callDirection === "missed" ? "call_missed" : "call_logged",
+      title: directionLabel,
+      callDirection,
+      callTimestamp: new Date().toISOString(),
+      callDurationSeconds: parsedDuration,
+      callNotes: callNotes.trim() || undefined,
     });
+  };
+
+  const handleCreateTaskFromCall = (activityId: string) => {
+    setLinkingTaskToCallId(activityId);
+  };
+
+  const handleSubmitTaskFromCall = () => {
+    if (!newTaskTitle.trim()) return;
+    addTaskWithCallLinkMutation.mutate({
+      title: newTaskTitle.trim(),
+      priority: newTaskPriority,
+      sourceActivityId: linkingTaskToCallId || undefined,
+    });
+  };
+
+  const isCallActivity = (activity: LeadActivity) => {
+    return activity.activityType === "call_logged" || activity.activityType === "call_missed";
   };
 
   if (!lead) return null;
@@ -370,6 +446,151 @@ export function LeadDetailDialog({
             </TabsContent>
 
             <TabsContent value="activity" className="mt-0 space-y-4">
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant={showLogCallForm ? "secondary" : "outline"}
+                  onClick={() => setShowLogCallForm(!showLogCallForm)}
+                  data-testid="button-toggle-log-call"
+                >
+                  <PhoneCall className="h-4 w-4 mr-1" />
+                  Log Call
+                </Button>
+              </div>
+
+              {showLogCallForm && (
+                <Card className="border-primary/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <PhoneCall className="h-4 w-4" />
+                      Log a Call
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant={callDirection === "inbound" ? "default" : "outline"}
+                        onClick={() => setCallDirection("inbound")}
+                        data-testid="button-call-inbound"
+                      >
+                        <PhoneIncoming className="h-4 w-4 mr-1" />
+                        Inbound
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={callDirection === "outbound" ? "default" : "outline"}
+                        onClick={() => setCallDirection("outbound")}
+                        data-testid="button-call-outbound"
+                      >
+                        <PhoneOutgoing className="h-4 w-4 mr-1" />
+                        Outbound
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={callDirection === "missed" ? "default" : "outline"}
+                        onClick={() => setCallDirection("missed")}
+                        data-testid="button-call-missed"
+                      >
+                        <PhoneMissed className="h-4 w-4 mr-1" />
+                        Missed
+                      </Button>
+                    </div>
+                    
+                    <div className="flex gap-2 items-end">
+                      <div className="flex-1">
+                        <label className="text-sm text-muted-foreground mb-1 block">Duration (minutes)</label>
+                        <Input
+                          type="number"
+                          placeholder="0"
+                          min="0"
+                          value={callDuration}
+                          onChange={(e) => setCallDuration(e.target.value)}
+                          className="w-24"
+                          data-testid="input-call-duration"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-sm text-muted-foreground mb-1 block">Notes</label>
+                      <Textarea
+                        placeholder="Call notes..."
+                        value={callNotes}
+                        onChange={(e) => setCallNotes(e.target.value)}
+                        className="min-h-[60px]"
+                        data-testid="input-call-notes"
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={handleLogCall}
+                        disabled={logCallMutation.isPending}
+                        data-testid="button-submit-call-log"
+                      >
+                        {logCallMutation.isPending ? "Saving..." : "Log Call"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowLogCallForm(false)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {linkingTaskToCallId && (
+                <Card className="border-blue-500/50">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4" />
+                      Create Task from Call
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    <Input
+                      placeholder="Task title..."
+                      value={newTaskTitle}
+                      onChange={(e) => setNewTaskTitle(e.target.value)}
+                      data-testid="input-task-from-call"
+                    />
+                    <div className="flex gap-2">
+                      <Select value={newTaskPriority} onValueChange={setNewTaskPriority}>
+                        <SelectTrigger className="w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="urgent">Urgent</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button 
+                        size="sm" 
+                        onClick={handleSubmitTaskFromCall}
+                        disabled={!newTaskTitle.trim() || addTaskWithCallLinkMutation.isPending}
+                        data-testid="button-submit-task-from-call"
+                      >
+                        Create Task
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setLinkingTaskToCallId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <Card>
                   <CardHeader className="pb-2">
@@ -479,35 +700,65 @@ export function LeadDetailDialog({
                 </Card>
               )}
 
+              {activities.filter(a => isCallActivity(a)).length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <PhoneCall className="h-4 w-4" />
+                      Call History
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {activities
+                        .filter(a => isCallActivity(a))
+                        .map((activity) => (
+                          <CallLogEntry
+                            key={activity.id}
+                            activity={activity}
+                            users={users}
+                            leadId={lead.id}
+                            onCreateTask={handleCreateTaskFromCall}
+                          />
+                        ))
+                      }
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Activity Log</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {activities.length === 0 ? (
-                    <p className="text-sm text-muted-foreground py-4 text-center">No activity recorded yet.</p>
+                  {activities.filter(a => !isCallActivity(a)).length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-4 text-center">No other activity recorded yet.</p>
                   ) : (
                     <div className="space-y-3">
-                      {activities.map((activity) => {
-                        const typeInfo = activityTypeLabels[activity.activityType] || { label: activity.activityType, icon: MessageSquare };
-                        const Icon = typeInfo.icon;
-                        return (
-                          <div key={activity.id} className="flex gap-3 text-sm" data-testid={`activity-item-${activity.id}`}>
-                            <div className="p-1.5 rounded-full bg-muted h-fit">
-                              <Icon className="h-3 w-3" />
-                            </div>
-                            <div className="flex-1">
-                              <div className="font-medium">{typeInfo.label}</div>
-                              {activity.description && (
-                                <p className="text-muted-foreground">{activity.description}</p>
-                              )}
-                              <div className="text-xs text-muted-foreground mt-1">
-                                {activity.createdAt && format(new Date(activity.createdAt), "dd/MM/yyyy HH:mm")}
+                      {activities
+                        .filter(a => !isCallActivity(a))
+                        .map((activity) => {
+                          const typeInfo = activityTypeLabels[activity.activityType] || { label: activity.activityType, icon: MessageSquare };
+                          const Icon = typeInfo.icon;
+                          return (
+                            <div key={activity.id} className="flex gap-3 text-sm" data-testid={`activity-item-${activity.id}`}>
+                              <div className="p-1.5 rounded-full bg-muted h-fit">
+                                <Icon className="h-3 w-3" />
+                              </div>
+                              <div className="flex-1">
+                                <div className="font-medium">{typeInfo.label}</div>
+                                {activity.description && (
+                                  <p className="text-muted-foreground">{activity.description}</p>
+                                )}
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {activity.createdAt && format(new Date(activity.createdAt), "dd/MM/yyyy HH:mm")}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })
+                      }
                     </div>
                   )}
                 </CardContent>
