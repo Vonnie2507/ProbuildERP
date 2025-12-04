@@ -40,7 +40,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Lead, Client, InsertLead, Quote } from "@shared/schema";
+import type { Lead, Client, InsertLead, Quote, User } from "@shared/schema";
 
 type LeadStatus = "new" | "contacted" | "quoted" | "approved" | "declined";
 
@@ -104,6 +104,10 @@ export default function Leads() {
     queryKey: ["/api/quotes"],
   });
 
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
   const createLeadMutation = useMutation({
     mutationFn: async (data: InsertLead) => {
       return apiRequest("POST", "/api/leads", data);
@@ -133,6 +137,7 @@ export default function Leads() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({
         title: "Lead Updated",
         description: "Lead has been updated successfully",
@@ -224,6 +229,15 @@ export default function Leads() {
     e.preventDefault();
     if (!editingLead) return;
     
+    if (!formData.clientName.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Client name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     updateLeadMutation.mutate({
       id: editingLead.id,
       data: {
@@ -232,7 +246,10 @@ export default function Leads() {
         description: formData.description,
         siteAddress: formData.address,
         jobFulfillmentType: formData.jobFulfillmentType,
-      },
+        clientName: formData.clientName.trim(),
+        clientPhone: formData.phone.trim(),
+        clientEmail: formData.email.trim(),
+      } as any,
     });
   };
 
@@ -267,6 +284,19 @@ export default function Leads() {
     return client?.email || "";
   };
 
+  const getAssignedUser = (userId: string | null): { name: string; initials: string } => {
+    if (!userId) return { name: "Unassigned", initials: "—" };
+    const user = users.find(u => u.id === userId);
+    if (!user) return { name: "Unassigned", initials: "—" };
+    const firstName = user.firstName || "";
+    const lastName = user.lastName || "";
+    const fullName = `${firstName} ${lastName}`.trim() || "Unknown";
+    const initials = firstName && lastName
+      ? `${firstName[0]}${lastName[0]}`.toUpperCase()
+      : fullName.substring(0, 2).toUpperCase();
+    return { name: fullName, initials };
+  };
+
   const kanbanLeads: KanbanLead[] = leads.map((lead) => ({
     id: lead.id,
     leadNumber: lead.leadNumber,
@@ -279,7 +309,7 @@ export default function Leads() {
     leadType: lead.leadType as "public" | "trade",
     jobFulfillmentType: (lead.jobFulfillmentType as "supply_only" | "supply_install") || "supply_install",
     status: mapStageToStatus(lead.stage),
-    assignedTo: { name: "Dave", initials: "DV" },
+    assignedTo: getAssignedUser(lead.assignedTo),
     createdAt: formatTimeAgo(lead.createdAt),
   }));
 
@@ -336,6 +366,15 @@ export default function Leads() {
   const handleSubmitLead = (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!formData.clientName.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Client name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     createLeadMutation.mutate({
       source: formData.source,
       leadType: formData.leadType,
@@ -343,7 +382,10 @@ export default function Leads() {
       siteAddress: formData.address,
       stage: "new",
       jobFulfillmentType: formData.jobFulfillmentType,
-    });
+      clientName: formData.clientName.trim(),
+      clientPhone: formData.phone.trim(),
+      clientEmail: formData.email.trim(),
+    } as any);
   };
 
   const filteredLeads = kanbanLeads.filter(
@@ -569,10 +611,43 @@ export default function Leads() {
           <DialogHeader>
             <DialogTitle>Edit Lead</DialogTitle>
             <DialogDescription>
-              Update lead details for {editingLead ? getClientName(editingLead.clientId) : "this lead"}
+              Update lead and client details
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmitEdit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-clientName">Client Name</Label>
+              <Input 
+                id="edit-clientName" 
+                placeholder="Enter client name" 
+                value={formData.clientName}
+                onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                data-testid="input-edit-client-name" 
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-phone">Phone</Label>
+                <Input 
+                  id="edit-phone" 
+                  placeholder="0400 000 000" 
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  data-testid="input-edit-phone" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-email">Email</Label>
+                <Input 
+                  id="edit-email" 
+                  type="email" 
+                  placeholder="email@example.com" 
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  data-testid="input-edit-email" 
+                />
+              </div>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="edit-address">Site Address</Label>
               <Input 
@@ -648,9 +723,6 @@ export default function Leads() {
                 data-testid="textarea-edit-description"
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              To update client contact details, please edit the client record from the Clients page.
-            </p>
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setIsEditDialogOpen(false)}>
                 Cancel
