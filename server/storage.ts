@@ -997,11 +997,20 @@ export class DatabaseStorage implements IStorage {
     }
     
     const prefix = `${lead.leadNumber}-Q`;
-    const [result] = await db.select({ 
-      maxSeq: sql<number>`COALESCE(MAX(CAST(SUBSTRING(quote_number FROM ${prefix.length + 1}) AS INTEGER)), 0)` 
-    }).from(quotes).where(like(quotes.quoteNumber, `${prefix}%`));
-    const nextSeq = (result?.maxSeq || 0) + 1;
-    return `${prefix}${nextSeq}`;
+    const existingQuotes = await db.select({ quoteNumber: quotes.quoteNumber })
+      .from(quotes)
+      .where(like(quotes.quoteNumber, `${prefix}%`));
+    
+    let maxSeq = 0;
+    for (const q of existingQuotes) {
+      const match = q.quoteNumber.match(/-Q(\d+)$/);
+      if (match) {
+        const seq = parseInt(match[1], 10);
+        if (seq > maxSeq) maxSeq = seq;
+      }
+    }
+    
+    return `${prefix}${maxSeq + 1}`;
   }
 
   async updateQuote(id: string, quote: Partial<InsertQuote>): Promise<Quote | undefined> {
@@ -1075,10 +1084,30 @@ export class DatabaseStorage implements IStorage {
     if (leadId) {
       const lead = await this.getLead(leadId);
       if (lead?.leadNumber) {
-        jobNumber = `${lead.leadNumber}-JOB`;
-        invoiceNumber = `${lead.leadNumber}-INV`;
+        const baseJobNumber = `${lead.leadNumber}-JOB`;
+        const baseInvoiceNumber = `${lead.leadNumber}-INV`;
+        
+        const existingJob = await this.getJobByNumber(baseJobNumber);
+        if (existingJob) {
+          const existingJobs = await db.select({ jobNumber: jobs.jobNumber })
+            .from(jobs)
+            .where(like(jobs.jobNumber, `${lead.leadNumber}-JOB%`));
+          
+          let maxSuffix = 0;
+          for (const j of existingJobs) {
+            const match = j.jobNumber.match(/-JOB(\d+)?$/);
+            if (match) {
+              const suffix = match[1] ? parseInt(match[1], 10) : 1;
+              if (suffix > maxSuffix) maxSuffix = suffix;
+            }
+          }
+          jobNumber = `${lead.leadNumber}-JOB${maxSuffix + 1}`;
+          invoiceNumber = `${lead.leadNumber}-INV${maxSuffix + 1}`;
+        } else {
+          jobNumber = baseJobNumber;
+          invoiceNumber = baseInvoiceNumber;
+        }
       }
-      // Propagate job fulfillment type from lead if not explicitly set
       if (!jobType && lead?.jobFulfillmentType) {
         jobType = lead.jobFulfillmentType as "supply_only" | "supply_install";
       }

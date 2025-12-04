@@ -150,6 +150,52 @@ export function LeadDetailDialog({
     enabled: !!lead?.id && open && lead?.jobFulfillmentType === "supply_install",
   });
 
+  const updateLeadMutation = useMutation({
+    mutationFn: async (data: Partial<Lead>) => {
+      return apiRequest("PATCH", `/api/leads/${lead?.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Lead updated successfully" });
+    },
+    onError: (error) => {
+      console.error("Error updating lead:", error);
+      toast({ title: "Failed to update lead", variant: "destructive" });
+    },
+  });
+
+  const updateQuoteMutation = useMutation({
+    mutationFn: async ({ quoteId, data }: { quoteId: string; data: { status: string } }) => {
+      return apiRequest("PATCH", `/api/quotes/${quoteId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      toast({ title: "Quote updated successfully" });
+    },
+    onError: (error) => {
+      console.error("Error updating quote:", error);
+      toast({ title: "Failed to update quote", variant: "destructive" });
+    },
+  });
+
+  const convertToJobMutation = useMutation({
+    mutationFn: async ({ quoteId, jobType }: { quoteId: string; jobType: string }) => {
+      return apiRequest("POST", `/api/quotes/${quoteId}/accept`, { jobType });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Job created successfully!" });
+      onOpenChange(false);
+    },
+    onError: (error) => {
+      console.error("Error converting to job:", error);
+      toast({ title: "Failed to create job", variant: "destructive" });
+    },
+  });
+
   const addActivityMutation = useMutation({
     mutationFn: async (data: { activityType: string; title: string; description?: string }) => {
       return apiRequest("POST", `/api/leads/${lead?.id}/activities`, data);
@@ -383,6 +429,40 @@ export function LeadDetailDialog({
 
               <Card>
                 <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Assignment</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-3">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <Select
+                      value={lead.assignedTo || "unassigned"}
+                      onValueChange={(value) => {
+                        updateLeadMutation.mutate({
+                          assignedTo: value === "unassigned" ? null : value,
+                        } as any);
+                      }}
+                    >
+                      <SelectTrigger className="w-[200px]" data-testid="select-lead-assigned-to">
+                        <SelectValue placeholder="Assign to..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        {users.map((user) => (
+                          <SelectItem key={user.id} value={user.id}>
+                            {user.firstName} {user.lastName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {updateLeadMutation.isPending && (
+                      <span className="text-xs text-muted-foreground">Saving...</span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3">
                   <CardTitle className="text-base">Project Details</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
@@ -448,13 +528,15 @@ export function LeadDetailDialog({
                   {quotes.map((quote) => (
                     <Card
                       key={quote.id}
-                      className="hover-elevate cursor-pointer"
-                      onClick={() => onViewQuote(quote)}
+                      className="hover-elevate"
                       data-testid={`quote-item-${quote.id}`}
                     >
                       <CardContent className="p-4">
                         <div className="flex items-center justify-between">
-                          <div>
+                          <div 
+                            className="cursor-pointer flex-1"
+                            onClick={() => onViewQuote(quote)}
+                          >
                             <div className="font-medium">{quote.quoteNumber}</div>
                             <div className="text-sm text-muted-foreground">
                               {formatCurrency(quote.totalAmount)}
@@ -472,7 +554,46 @@ export function LeadDetailDialog({
                             >
                               {quote.status}
                             </Badge>
-                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                            {quote.status === "draft" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateQuoteMutation.mutate({
+                                    quoteId: quote.id,
+                                    data: { status: "sent" },
+                                  });
+                                }}
+                                disabled={updateQuoteMutation.isPending}
+                                data-testid={`button-send-quote-${quote.id}`}
+                              >
+                                <Send className="h-3 w-3 mr-1" />
+                                Send
+                              </Button>
+                            )}
+                            {quote.status === "sent" && (
+                              <Button
+                                size="sm"
+                                variant="default"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  convertToJobMutation.mutate({
+                                    quoteId: quote.id,
+                                    jobType: lead.jobFulfillmentType || "supply_install",
+                                  });
+                                }}
+                                disabled={convertToJobMutation.isPending}
+                                data-testid={`button-convert-to-job-${quote.id}`}
+                              >
+                                <ClipboardList className="h-3 w-3 mr-1" />
+                                Convert to Job
+                              </Button>
+                            )}
+                            <ChevronRight 
+                              className="h-4 w-4 text-muted-foreground cursor-pointer" 
+                              onClick={() => onViewQuote(quote)}
+                            />
                           </div>
                         </div>
                       </CardContent>

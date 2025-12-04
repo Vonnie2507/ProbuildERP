@@ -317,6 +317,39 @@ export default function Leads() {
     setIsDeleteDialogOpen(true);
   };
 
+  const handleLeadStatusChange = (leadId: string, newStatus: string) => {
+    if (updateLeadMutation.isPending) return;
+    
+    const previousLeads = queryClient.getQueryData<Lead[]>(["/api/leads"]);
+    const mappedStage = mapStatusToStage(newStatus as LeadStatus);
+    
+    queryClient.setQueryData<Lead[]>(["/api/leads"], (old) =>
+      old?.map(lead =>
+        lead.id === leadId ? { ...lead, stage: mappedStage as Lead["stage"] } : lead
+      )
+    );
+    
+    updateLeadMutation.mutate(
+      { id: leadId, data: { stage: mappedStage as Lead["stage"] } },
+      {
+        onError: () => {
+          queryClient.setQueryData(["/api/leads"], previousLeads);
+          toast({
+            title: "Error",
+            description: "Failed to move lead. Please try again.",
+            variant: "destructive",
+          });
+        },
+        onSuccess: () => {
+          toast({
+            title: "Lead Updated",
+            description: `Lead moved to ${newStatus}`,
+          });
+        },
+      }
+    );
+  };
+
   const handleSubmitEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingLead) return;
@@ -764,6 +797,8 @@ export default function Leads() {
           onEditLead={handleEditLead}
           onDeleteLead={handleDeleteLead}
           onViewSetupTemplate={handleViewSetupTemplate}
+          onLeadStatusChange={handleLeadStatusChange}
+          isUpdating={updateLeadMutation.isPending}
         />
       )}
 
@@ -1263,6 +1298,23 @@ function mapStageToStatus(stage: string): LeadStatus {
       return "approved";
     case "declined":
     case "lost":
+      return "declined";
+    default:
+      return "new";
+  }
+}
+
+function mapStatusToStage(status: LeadStatus): string {
+  switch (status) {
+    case "new":
+      return "new";
+    case "contacted":
+      return "contacted";
+    case "quoted":
+      return "quote_sent";
+    case "approved":
+      return "approved";
+    case "declined":
       return "declined";
     default:
       return "new";

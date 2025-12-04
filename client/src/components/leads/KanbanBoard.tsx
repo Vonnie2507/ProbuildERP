@@ -48,6 +48,8 @@ interface KanbanBoardProps {
   onEditLead?: (lead: Lead) => void;
   onDeleteLead?: (lead: Lead) => void;
   onViewSetupTemplate?: (lead: Lead) => void;
+  onLeadStatusChange?: (leadId: string, newStatus: LeadStatus) => void;
+  isUpdating?: boolean;
 }
 
 const columns: KanbanColumn[] = [
@@ -66,36 +68,56 @@ export function KanbanBoard({
   onEditLead,
   onDeleteLead,
   onViewSetupTemplate,
+  onLeadStatusChange,
+  isUpdating = false,
 }: KanbanBoardProps) {
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<LeadStatus | null>(null);
+
+  const canDrag = !isUpdating;
 
   const getLeadsForColumn = (status: LeadStatus) =>
     leads.filter((lead) => lead.status === status);
 
   const handleDragStart = (lead: Lead) => {
-    setDraggedLead(lead);
+    if (canDrag) {
+      setDraggedLead(lead);
+    }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent, columnStatus: LeadStatus) => {
     e.preventDefault();
+    setDragOverColumn(columnStatus);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverColumn(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedLead(null);
+    setDragOverColumn(null);
   };
 
   const handleDrop = (status: LeadStatus) => {
-    if (draggedLead) {
-      console.log(`Moving lead ${draggedLead.id} to ${status}`);
-      setDraggedLead(null);
+    if (draggedLead && draggedLead.status !== status && onLeadStatusChange) {
+      onLeadStatusChange(draggedLead.id, status);
     }
+    setDraggedLead(null);
+    setDragOverColumn(null);
   };
 
   return (
     <div className="flex gap-4 overflow-x-auto pb-4">
       {columns.map((column) => {
         const columnLeads = getLeadsForColumn(column.id);
+        const isDropTarget = dragOverColumn === column.id && draggedLead?.status !== column.id;
         return (
           <div
             key={column.id}
-            className="flex-shrink-0 w-80"
-            onDragOver={handleDragOver}
+            className={`flex-shrink-0 w-80 transition-all duration-200 ${isDropTarget ? "ring-2 ring-primary rounded-lg" : ""}`}
+            onDragOver={(e) => handleDragOver(e, column.id)}
+            onDragLeave={handleDragLeave}
             onDrop={() => handleDrop(column.id)}
             data-testid={`kanban-column-${column.id}`}
           >
@@ -130,8 +152,10 @@ export function KanbanBoard({
                     {columnLeads.map((lead) => (
                       <div
                         key={lead.id}
-                        draggable
+                        draggable={canDrag}
                         onDragStart={() => handleDragStart(lead)}
+                        onDragEnd={handleDragEnd}
+                        className={`${canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-default"} ${draggedLead?.id === lead.id ? "opacity-50" : ""}`}
                       >
                         <LeadCard
                           lead={lead}
