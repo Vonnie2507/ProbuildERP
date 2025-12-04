@@ -1,8 +1,9 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, Mail, MapPin, Clock, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Phone, Mail, MapPin, Clock, MoreHorizontal, Pencil, Trash2, ClipboardList } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,6 +22,7 @@ interface Lead {
   source: string;
   fenceStyle: string;
   leadType: "public" | "trade";
+  jobFulfillmentType?: "supply_only" | "supply_install";
   status: "new" | "contacted" | "quoted" | "approved" | "declined";
   assignedTo: {
     name: string;
@@ -37,6 +39,7 @@ interface LeadCardProps {
   onFollowUp?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  onViewSetupTemplate?: () => void;
 }
 
 export function LeadCard({
@@ -47,6 +50,7 @@ export function LeadCard({
   onFollowUp,
   onEdit,
   onDelete,
+  onViewSetupTemplate,
 }: LeadCardProps) {
   return (
     <Card
@@ -56,9 +60,18 @@ export function LeadCard({
     >
       <CardContent className="p-4">
         <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <StatusBadge status={lead.leadType} />
             <StatusBadge status={lead.status} />
+            {lead.jobFulfillmentType && (
+              <Badge 
+                variant={lead.jobFulfillmentType === "supply_install" ? "default" : "secondary"}
+                className="text-xs"
+                data-testid={`badge-job-type-${lead.id}`}
+              >
+                {lead.jobFulfillmentType === "supply_install" ? "S+I" : "Supply"}
+              </Badge>
+            )}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -80,6 +93,18 @@ export function LeadCard({
               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onFollowUp?.(); }}>
                 Log Follow-up
               </DropdownMenuItem>
+              {lead.jobFulfillmentType === "supply_install" && onViewSetupTemplate && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem 
+                    onClick={(e) => { e.stopPropagation(); onViewSetupTemplate?.(); }}
+                    data-testid={`button-view-setup-template-${lead.id}`}
+                  >
+                    <ClipboardList className="h-4 w-4 mr-2" />
+                    View Setup Template
+                  </DropdownMenuItem>
+                </>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem 
                 onClick={(e) => { e.stopPropagation(); onDelete?.(); }} 

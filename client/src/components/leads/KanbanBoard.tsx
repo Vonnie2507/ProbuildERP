@@ -18,6 +18,7 @@ interface Lead {
   source: string;
   fenceStyle: string;
   leadType: "public" | "trade";
+  jobFulfillmentType?: "supply_only" | "supply_install";
   status: LeadStatus;
   assignedTo: {
     name: string;
@@ -39,6 +40,7 @@ interface KanbanBoardProps {
   onCreateQuote?: (lead: Lead) => void;
   onEditLead?: (lead: Lead) => void;
   onDeleteLead?: (lead: Lead) => void;
+  onViewSetupTemplate?: (lead: Lead) => void;
 }
 
 const columns: KanbanColumn[] = [
@@ -56,6 +58,7 @@ export function KanbanBoard({
   onCreateQuote,
   onEditLead,
   onDeleteLead,
+  onViewSetupTemplate,
 }: KanbanBoardProps) {
   const [draggedLead, setDraggedLead] = useState<Lead | null>(null);
 
@@ -129,6 +132,7 @@ export function KanbanBoard({
                           onCreateQuote={() => onCreateQuote?.(lead)}
                           onEdit={() => onEditLead?.(lead)}
                           onDelete={() => onDeleteLead?.(lead)}
+                          onViewSetupTemplate={() => onViewSetupTemplate?.(lead)}
                         />
                       </div>
                     ))}

@@ -762,6 +762,7 @@ export class DatabaseStorage implements IStorage {
     let jobNumber = job.jobNumber;
     let invoiceNumber = (job as any).invoiceNumber;
     let leadId = (job as any).leadId;
+    let jobType = job.jobType;
     
     if (job.quoteId && !leadId) {
       const quote = await this.getQuote(job.quoteId);
@@ -776,6 +777,10 @@ export class DatabaseStorage implements IStorage {
         jobNumber = `${lead.leadNumber}-JOB`;
         invoiceNumber = `${lead.leadNumber}-INV`;
       }
+      // Propagate job fulfillment type from lead if not explicitly set
+      if (!jobType && lead?.jobFulfillmentType) {
+        jobType = lead.jobFulfillmentType as "supply_only" | "supply_install";
+      }
     }
     
     if (!jobNumber) {
@@ -787,6 +792,7 @@ export class DatabaseStorage implements IStorage {
       jobNumber,
       invoiceNumber,
       leadId,
+      jobType: jobType || "supply_install",
     } as any).returning();
     return created;
   }

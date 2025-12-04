@@ -32,7 +32,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, Search, Filter, LayoutGrid, List, Download, Phone, Mail, MapPin, FileText, Edit, Trash2, X, ChevronRight, Calendar, DollarSign, Send, Check, Clock } from "lucide-react";
+import { Plus, Search, Filter, LayoutGrid, List, Download, Phone, Mail, MapPin, FileText, Edit, Trash2, X, ChevronRight, Calendar, DollarSign, Send, Check, Clock, ClipboardList, Package, Wrench, CalendarDays, CheckCircle } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -54,6 +54,7 @@ interface KanbanLead {
   source: string;
   fenceStyle: string;
   leadType: "public" | "trade";
+  jobFulfillmentType?: "supply_only" | "supply_install";
   status: LeadStatus;
   assignedTo: {
     name: string;
@@ -78,6 +79,8 @@ export default function Leads() {
   const [leadToDelete, setLeadToDelete] = useState<KanbanLead | null>(null);
   const [selectedLeadForQuote, setSelectedLeadForQuote] = useState<Lead | null>(null);
   const [isEditingQuote, setIsEditingQuote] = useState(false);
+  const [isSetupTemplateOpen, setIsSetupTemplateOpen] = useState(false);
+  const [selectedLeadForTemplate, setSelectedLeadForTemplate] = useState<Lead | null>(null);
   const [formData, setFormData] = useState({
     clientName: "",
     phone: "",
@@ -274,6 +277,7 @@ export default function Leads() {
     source: lead.source || "website",
     fenceStyle: `${lead.fenceStyle || "Unknown"} - ${lead.fenceLength || "?"}m`,
     leadType: lead.leadType as "public" | "trade",
+    jobFulfillmentType: (lead.jobFulfillmentType as "supply_only" | "supply_install") || "supply_install",
     status: mapStageToStatus(lead.stage),
     assignedTo: { name: "Dave", initials: "DV" },
     createdAt: formatTimeAgo(lead.createdAt),
@@ -304,6 +308,14 @@ export default function Leads() {
     if (originalLead) {
       setSelectedLeadForQuote(originalLead);
       setIsQuoteBuilderOpen(true);
+    }
+  };
+
+  const handleViewSetupTemplate = (lead: KanbanLead) => {
+    const originalLead = leads.find(l => l.id === lead.id);
+    if (originalLead && originalLead.jobFulfillmentType === "supply_install") {
+      setSelectedLeadForTemplate(originalLead);
+      setIsSetupTemplateOpen(true);
     }
   };
 
@@ -548,6 +560,7 @@ export default function Leads() {
           onCreateQuote={handleCreateQuote}
           onEditLead={handleEditLead}
           onDeleteLead={handleDeleteLead}
+          onViewSetupTemplate={handleViewSetupTemplate}
         />
       )}
 
@@ -1120,6 +1133,131 @@ export default function Leads() {
           )}
         </SheetContent>
       </Sheet>
+
+      <Dialog open={isSetupTemplateOpen} onOpenChange={setIsSetupTemplateOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardList className="h-5 w-5" />
+              Setup & Handover Template
+            </DialogTitle>
+            <DialogDescription>
+              Preview of the 5-section document for supply & install jobs
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedLeadForTemplate && (
+            <ScrollArea className="h-[60vh] pr-4">
+              <div className="space-y-4">
+                <div className="p-4 bg-muted/50 rounded-lg">
+                  <p className="text-sm text-muted-foreground mb-2">
+                    This template will be created automatically when a job is created from this lead.
+                    Once the job is created, you can fill out each section in the Jobs page.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="default">Lead: {selectedLeadForTemplate.leadNumber}</Badge>
+                    <Badge variant="secondary">Supply & Install</Badge>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <div className="p-1.5 rounded-full bg-muted">
+                          <MapPin className="h-4 w-4" />
+                        </div>
+                        Section 1: Sales & Site Info
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                      Site conditions, access details, old fence removal, underground services,
+                      equipment needs, fence specifications, and client confirmation.
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <div className="p-1.5 rounded-full bg-muted">
+                          <Package className="h-4 w-4" />
+                        </div>
+                        Section 2: Products / BOM
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                      Bill of Materials auto-populated from the approved quote.
+                      Verify product quantities and specifications before production.
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <div className="p-1.5 rounded-full bg-muted">
+                          <Wrench className="h-4 w-4" />
+                        </div>
+                        Section 3: Production Notes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                      Manufacturing checklist for posts, panels, gates, and hardware.
+                      Special production notes and quality requirements.
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <div className="p-1.5 rounded-full bg-muted">
+                          <CalendarDays className="h-4 w-4" />
+                        </div>
+                        Section 4: Scheduling
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                      Install date, time window, team assignment, and equipment requirements.
+                      Scheduler notes and logistics coordination.
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <div className="p-1.5 rounded-full bg-muted">
+                          <CheckCircle className="h-4 w-4" />
+                        </div>
+                        Section 5: Install Notes & Sign-off
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm text-muted-foreground">
+                      Pre-start checklist, install progress notes, completion details,
+                      and client sign-off confirmation.
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-4">
+                  <Button variant="outline" onClick={() => setIsSetupTemplateOpen(false)}>
+                    Close
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setIsSetupTemplateOpen(false);
+                      setSelectedLeadForQuote(selectedLeadForTemplate);
+                      setIsQuoteBuilderOpen(true);
+                    }}
+                    data-testid="button-create-quote-from-template"
+                  >
+                    <FileText className="h-4 w-4 mr-2" />
+                    Create Quote
+                  </Button>
+                </div>
+              </div>
+            </ScrollArea>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
