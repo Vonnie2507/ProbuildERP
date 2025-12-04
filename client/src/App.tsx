@@ -9,7 +9,8 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 import { Header } from "@/components/layout/Header";
 import { NewMessageBanner } from "@/components/layout/NewMessageBanner";
 import { AuthProvider, useAuth } from "@/hooks/use-auth";
-import { Loader2 } from "lucide-react";
+import { Loader2, ShieldX } from "lucide-react";
+import type { UserRole } from "@/lib/permissions";
 
 import Login from "@/pages/Login";
 import MyDashboard from "@/pages/MyDashboard";
@@ -67,9 +68,30 @@ function TradeLayout({ children }: { children: React.ReactNode }) {
   return <div className="h-screen overflow-auto">{children}</div>;
 }
 
-function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
-  const [location] = useLocation();
+const allInternalRoles: UserRole[] = ["admin", "sales", "scheduler", "production_manager", "warehouse", "installer"];
+const officeRoles: UserRole[] = ["admin", "sales", "scheduler", "production_manager"];
+
+function AccessDenied() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+      <ShieldX className="h-16 w-16 text-muted-foreground mb-4" />
+      <h2 className="text-xl font-semibold mb-2">Access Denied</h2>
+      <p className="text-muted-foreground mb-4">
+        You don't have permission to access this page.
+      </p>
+      <a href="/" className="text-primary hover:underline">Return to Dashboard</a>
+    </div>
+  );
+}
+
+function ProtectedRoute({ 
+  children, 
+  allowedRoles 
+}: { 
+  children: React.ReactNode;
+  allowedRoles?: UserRole[];
+}) {
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -83,6 +105,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     return <Redirect to="/login" />;
   }
 
+  if (allowedRoles && user?.role) {
+    const hasAccess = allowedRoles.includes(user.role as UserRole);
+    if (!hasAccess) {
+      return <AccessDenied />;
+    }
+  }
+
   return <>{children}</>;
 }
 
@@ -93,154 +122,154 @@ function AuthenticatedRouter() {
         <LoginRedirect />
       </Route>
       <Route path="/">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={allInternalRoles}>
           <MainLayout>
             <MyDashboard />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/business-dashboard">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin"]}>
           <MainLayout>
             <Dashboard />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/leads">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "sales"]}>
           <MainLayout>
             <Leads />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/quotes">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "sales"]}>
           <MainLayout>
             <Quotes />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/jobs">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "sales", "scheduler", "production_manager", "warehouse", "installer"]}>
           <MainLayout>
             <Jobs />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/clients">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={officeRoles}>
           <MainLayout>
             <Clients />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/production">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "production_manager", "warehouse"]}>
           <MainLayout>
             <Production />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/schedule">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "scheduler", "production_manager", "installer"]}>
           <MainLayout>
             <Schedule />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/inventory">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "production_manager", "warehouse"]}>
           <MainLayout>
             <Inventory />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/payments">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin"]}>
           <MainLayout>
             <Payments />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/messages">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={officeRoles}>
           <MainLayout>
             <Messages />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/quote-analytics">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "sales"]}>
           <MainLayout>
             <QuoteAnalytics />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/automation">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin"]}>
           <MainLayout>
             <AutomationCampaigns />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/installer">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "installer"]}>
           <InstallerLayout>
             <Installer />
           </InstallerLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/trade">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "trade_client"]}>
           <TradeLayout>
             <Trade />
           </TradeLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/organisation/departments">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin"]}>
           <MainLayout>
             <OrganisationDepartments />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/organisation/workflows">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={allInternalRoles}>
           <MainLayout>
             <OrganisationWorkflows />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/organisation/policies">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={allInternalRoles}>
           <MainLayout>
             <OrganisationPolicies />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/organisation/resources">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={allInternalRoles}>
           <MainLayout>
             <OrganisationResources />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/organisation/knowledge">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={allInternalRoles}>
           <MainLayout>
             <OrganisationKnowledge />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/live-doc-templates">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin", "sales", "scheduler", "production_manager"]}>
           <MainLayout>
             <LiveDocTemplates />
           </MainLayout>
         </ProtectedRoute>
       </Route>
       <Route path="/import">
-        <ProtectedRoute>
+        <ProtectedRoute allowedRoles={["admin"]}>
           <MainLayout>
             <Import />
           </MainLayout>
