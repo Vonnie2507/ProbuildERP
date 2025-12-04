@@ -26,6 +26,7 @@ import {
   User,
   TrendingUp,
   Upload,
+  LayoutDashboard,
 } from "lucide-react";
 import {
   Sidebar,
@@ -116,6 +117,12 @@ const navigationConfig: NavGroup[] = [
       { title: "Policies", url: "/organisation/policies", icon: Shield },
       { title: "Resources", url: "/organisation/resources", icon: FolderOpen },
       { title: "Knowledge Base", url: "/organisation/knowledge", icon: BookOpen },
+    ],
+  },
+  {
+    label: "Settings",
+    items: [
+      { title: "Dashboard Builder", url: "/dashboard-builder", icon: LayoutDashboard },
     ],
   },
 ];

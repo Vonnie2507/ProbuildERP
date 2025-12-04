@@ -49,6 +49,14 @@ The system employs a modern web architecture with a clear separation of concerns
 -   **Analytics & Automation:** Incorporates Quote Analytics Dashboard and configurable Automation Campaigns for SMS, triggered by various business events.
 -   **Internal Management:** Features an "Organisation Hub" for managing departments, workflows, policies, resources, and a knowledge base.
 -   **P&L Calculator:** Provides a staff-only comprehensive job costing and profit/loss analysis tool.
+-   **Dashboard Builder:** Admin-only feature for configuring role-specific dashboards:
+    -   Located at `/dashboard-builder` (admin access only)
+    -   Create, edit, and delete dashboard layouts per role
+    -   Widget library with 29 pre-seeded widgets (KPIs, charts, tables, analytics)
+    -   Drag-and-drop widget arrangement with position and size configuration
+    -   Publish layouts to make them active for each role
+    -   Database tables: dashboard_widgets (widget library), role_dashboard_layouts (layout configs), dashboard_widget_instances (placed widgets)
+    -   API routes: /api/dashboard-builder/widgets, /api/dashboard-builder/layouts, /api/dashboard-builder/instances
 
 **System Design Choices:**
 -   **API:** All endpoints are prefixed with `/api/` and support standard CRUD operations.

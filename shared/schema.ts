@@ -1838,3 +1838,106 @@ export type JobSetupDocument = typeof jobSetupDocuments.$inferSelect;
 
 export type InsertJobSetupProduct = z.infer<typeof insertJobSetupProductSchema>;
 export type JobSetupProduct = typeof jobSetupProducts.$inferSelect;
+
+// ============================================
+// DASHBOARD BUILDER TABLES
+// ============================================
+
+export const widgetTypeEnum = pgEnum("widget_type", [
+  "kpi_card",
+  "bar_chart",
+  "line_chart", 
+  "pie_chart",
+  "area_chart",
+  "table",
+  "recent_items",
+  "status_breakdown",
+  "trend_metric",
+  "progress_bar",
+  "weather",
+  "tasks",
+  "notifications",
+  "leave_balance",
+  "quick_actions"
+]);
+
+export const widgetCategoryEnum = pgEnum("widget_category", [
+  "kpis",
+  "charts",
+  "tables",
+  "analytics",
+  "personal"
+]);
+
+export const dashboardWidgets = pgTable("dashboard_widgets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  widgetType: widgetTypeEnum("widget_type").notNull(),
+  category: widgetCategoryEnum("category").notNull(),
+  dataSource: varchar("data_source", { length: 100 }).notNull(),
+  defaultWidth: integer("default_width").default(1).notNull(),
+  defaultHeight: integer("default_height").default(1).notNull(),
+  minWidth: integer("min_width").default(1),
+  minHeight: integer("min_height").default(1),
+  maxWidth: integer("max_width").default(4),
+  maxHeight: integer("max_height").default(4),
+  configSchema: jsonb("config_schema"),
+  defaultConfig: jsonb("default_config"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const roleDashboardLayouts = pgTable("role_dashboard_layouts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  role: userRoleEnum("role").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  isDefault: boolean("is_default").default(false).notNull(),
+  isPublished: boolean("is_published").default(false).notNull(),
+  gridColumns: integer("grid_columns").default(12).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  createdBy: varchar("created_by").references(() => users.id),
+  updatedBy: varchar("updated_by").references(() => users.id),
+});
+
+export const dashboardWidgetInstances = pgTable("dashboard_widget_instances", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  layoutId: varchar("layout_id").notNull().references(() => roleDashboardLayouts.id, { onDelete: "cascade" }),
+  widgetId: varchar("widget_id").notNull().references(() => dashboardWidgets.id),
+  positionX: integer("position_x").default(0).notNull(),
+  positionY: integer("position_y").default(0).notNull(),
+  width: integer("width").default(1).notNull(),
+  height: integer("height").default(1).notNull(),
+  config: jsonb("config"),
+  title: varchar("title", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Insert schemas
+export const insertDashboardWidgetSchema = createInsertSchema(dashboardWidgets).omit({ 
+  id: true, 
+  createdAt: true 
+});
+
+export const insertRoleDashboardLayoutSchema = createInsertSchema(roleDashboardLayouts).omit({ 
+  id: true, 
+  createdAt: true, 
+  updatedAt: true 
+});
+
+export const insertDashboardWidgetInstanceSchema = createInsertSchema(dashboardWidgetInstances).omit({ 
+  id: true, 
+  createdAt: true 
+});
+
+// Types
+export type InsertDashboardWidget = z.infer<typeof insertDashboardWidgetSchema>;
+export type DashboardWidget = typeof dashboardWidgets.$inferSelect;
+
+export type InsertRoleDashboardLayout = z.infer<typeof insertRoleDashboardLayoutSchema>;
+export type RoleDashboardLayout = typeof roleDashboardLayouts.$inferSelect;
+
+export type InsertDashboardWidgetInstance = z.infer<typeof insertDashboardWidgetInstanceSchema>;
+export type DashboardWidgetInstance = typeof dashboardWidgetInstances.$inferSelect;

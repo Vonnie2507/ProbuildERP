@@ -58,6 +58,10 @@ import {
   type LiveDocumentTemplate, type InsertLiveDocumentTemplate,
   type LeadActivity, type InsertLeadActivity,
   type LeadTask, type InsertLeadTask,
+  type DashboardWidget, type InsertDashboardWidget,
+  type RoleDashboardLayout, type InsertRoleDashboardLayout,
+  type DashboardWidgetInstance, type InsertDashboardWidgetInstance,
+  dashboardWidgets, roleDashboardLayouts, dashboardWidgetInstances,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -456,6 +460,38 @@ export interface IStorage {
   
   // Seed products from quote
   seedJobSetupProductsFromQuote(documentId: string, quoteId: string): Promise<JobSetupProduct[]>;
+
+  // ============================================
+  // DASHBOARD BUILDER
+  // ============================================
+
+  // Dashboard Widgets (library)
+  getDashboardWidget(id: string): Promise<DashboardWidget | undefined>;
+  getDashboardWidgets(): Promise<DashboardWidget[]>;
+  getDashboardWidgetsByCategory(category: string): Promise<DashboardWidget[]>;
+  getActiveWidgets(): Promise<DashboardWidget[]>;
+  createDashboardWidget(widget: InsertDashboardWidget): Promise<DashboardWidget>;
+  updateDashboardWidget(id: string, widget: Partial<InsertDashboardWidget>): Promise<DashboardWidget | undefined>;
+
+  // Role Dashboard Layouts
+  getRoleDashboardLayout(id: string): Promise<RoleDashboardLayout | undefined>;
+  getRoleDashboardLayouts(): Promise<RoleDashboardLayout[]>;
+  getRoleDashboardLayoutsByRole(role: string): Promise<RoleDashboardLayout[]>;
+  getPublishedLayoutForRole(role: string): Promise<RoleDashboardLayout | undefined>;
+  getDefaultLayoutForRole(role: string): Promise<RoleDashboardLayout | undefined>;
+  createRoleDashboardLayout(layout: InsertRoleDashboardLayout): Promise<RoleDashboardLayout>;
+  updateRoleDashboardLayout(id: string, layout: Partial<InsertRoleDashboardLayout>): Promise<RoleDashboardLayout | undefined>;
+  deleteRoleDashboardLayout(id: string): Promise<boolean>;
+  publishRoleDashboardLayout(id: string): Promise<RoleDashboardLayout | undefined>;
+
+  // Dashboard Widget Instances
+  getDashboardWidgetInstance(id: string): Promise<DashboardWidgetInstance | undefined>;
+  getDashboardWidgetInstancesByLayout(layoutId: string): Promise<DashboardWidgetInstance[]>;
+  createDashboardWidgetInstance(instance: InsertDashboardWidgetInstance): Promise<DashboardWidgetInstance>;
+  updateDashboardWidgetInstance(id: string, instance: Partial<InsertDashboardWidgetInstance>): Promise<DashboardWidgetInstance | undefined>;
+  deleteDashboardWidgetInstance(id: string): Promise<boolean>;
+  deleteDashboardWidgetInstancesByLayout(layoutId: string): Promise<boolean>;
+  saveDashboardLayout(layoutId: string, instances: InsertDashboardWidgetInstance[]): Promise<DashboardWidgetInstance[]>;
 }
 
 export interface DashboardStats {
@@ -751,7 +787,7 @@ export class DatabaseStorage implements IStorage {
           ),
           db.select({ count: sql<number>`count(*)` }).from(quotes).where(gte(quotes.createdAt, thisMonthStart)),
           db.select({ count: sql<number>`count(*)` }).from(quotes).where(
-            and(eq(quotes.status, 'accepted'), gte(quotes.createdAt, thisMonthStart))
+            and(eq(quotes.status, 'approved'), gte(quotes.createdAt, thisMonthStart))
           ),
         ]);
         const conversionRate = Number(myQuotes[0]?.count || 0) > 0 
@@ -766,7 +802,7 @@ export class DatabaseStorage implements IStorage {
       case 'scheduler': {
         const [scheduledThisWeek, unscheduledJobs] = await Promise.all([
           db.select({ count: sql<number>`count(*)` }).from(scheduleEvents).where(
-            gte(scheduleEvents.startTime, thisWeekStart)
+            gte(scheduleEvents.startDate, thisWeekStart)
           ),
           db.select({ count: sql<number>`count(*)` }).from(jobs).where(
             eq(jobs.status, 'ready_for_scheduling')
@@ -783,7 +819,7 @@ export class DatabaseStorage implements IStorage {
             ne(productionTasks.status, 'completed')
           ),
           db.select({ count: sql<number>`count(*)` }).from(productionTasks).where(
-            and(eq(productionTasks.status, 'completed'), gte(productionTasks.completedAt, thisWeekStart))
+            and(eq(productionTasks.status, 'completed'), gte(productionTasks.endTime, thisWeekStart))
           ),
         ]);
         return [
@@ -794,7 +830,7 @@ export class DatabaseStorage implements IStorage {
       case 'warehouse': {
         const [lowStockItems] = await Promise.all([
           db.select({ count: sql<number>`count(*)` }).from(products).where(
-            sql`${products.stockQuantity}::int <= ${products.reorderLevel}::int`
+            sql`${products.stockOnHand}::int <= ${products.reorderPoint}::int`
           ),
         ]);
         return [
@@ -2683,6 +2719,161 @@ export class DatabaseStorage implements IStorage {
     });
 
     return this.createJobSetupProducts(productsToCreate);
+  }
+
+  // ============================================
+  // DASHBOARD BUILDER IMPLEMENTATIONS
+  // ============================================
+
+  // Dashboard Widgets (library)
+  async getDashboardWidget(id: string): Promise<DashboardWidget | undefined> {
+    const [widget] = await db.select().from(dashboardWidgets).where(eq(dashboardWidgets.id, id));
+    return widget;
+  }
+
+  async getDashboardWidgets(): Promise<DashboardWidget[]> {
+    return db.select().from(dashboardWidgets).orderBy(dashboardWidgets.category, dashboardWidgets.name);
+  }
+
+  async getDashboardWidgetsByCategory(category: string): Promise<DashboardWidget[]> {
+    return db.select().from(dashboardWidgets).where(eq(dashboardWidgets.category, category as any));
+  }
+
+  async getActiveWidgets(): Promise<DashboardWidget[]> {
+    return db.select().from(dashboardWidgets).where(eq(dashboardWidgets.isActive, true)).orderBy(dashboardWidgets.category, dashboardWidgets.name);
+  }
+
+  async createDashboardWidget(widget: InsertDashboardWidget): Promise<DashboardWidget> {
+    const [created] = await db.insert(dashboardWidgets).values(widget).returning();
+    return created;
+  }
+
+  async updateDashboardWidget(id: string, widget: Partial<InsertDashboardWidget>): Promise<DashboardWidget | undefined> {
+    const [updated] = await db.update(dashboardWidgets)
+      .set(widget)
+      .where(eq(dashboardWidgets.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Role Dashboard Layouts
+  async getRoleDashboardLayout(id: string): Promise<RoleDashboardLayout | undefined> {
+    const [layout] = await db.select().from(roleDashboardLayouts).where(eq(roleDashboardLayouts.id, id));
+    return layout;
+  }
+
+  async getRoleDashboardLayouts(): Promise<RoleDashboardLayout[]> {
+    return db.select().from(roleDashboardLayouts).orderBy(roleDashboardLayouts.role, roleDashboardLayouts.name);
+  }
+
+  async getRoleDashboardLayoutsByRole(role: string): Promise<RoleDashboardLayout[]> {
+    return db.select().from(roleDashboardLayouts).where(eq(roleDashboardLayouts.role, role as any));
+  }
+
+  async getPublishedLayoutForRole(role: string): Promise<RoleDashboardLayout | undefined> {
+    const [layout] = await db.select().from(roleDashboardLayouts)
+      .where(and(
+        eq(roleDashboardLayouts.role, role as any),
+        eq(roleDashboardLayouts.isPublished, true),
+        eq(roleDashboardLayouts.isDefault, true)
+      ));
+    return layout;
+  }
+
+  async getDefaultLayoutForRole(role: string): Promise<RoleDashboardLayout | undefined> {
+    const [layout] = await db.select().from(roleDashboardLayouts)
+      .where(and(
+        eq(roleDashboardLayouts.role, role as any),
+        eq(roleDashboardLayouts.isDefault, true)
+      ));
+    return layout;
+  }
+
+  async createRoleDashboardLayout(layout: InsertRoleDashboardLayout): Promise<RoleDashboardLayout> {
+    const [created] = await db.insert(roleDashboardLayouts).values(layout).returning();
+    return created;
+  }
+
+  async updateRoleDashboardLayout(id: string, layout: Partial<InsertRoleDashboardLayout>): Promise<RoleDashboardLayout | undefined> {
+    const [updated] = await db.update(roleDashboardLayouts)
+      .set({ ...layout, updatedAt: new Date() })
+      .where(eq(roleDashboardLayouts.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteRoleDashboardLayout(id: string): Promise<boolean> {
+    const result = await db.delete(roleDashboardLayouts).where(eq(roleDashboardLayouts.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async publishRoleDashboardLayout(id: string): Promise<RoleDashboardLayout | undefined> {
+    // First get the layout to find its role
+    const layout = await this.getRoleDashboardLayout(id);
+    if (!layout) return undefined;
+
+    // Unpublish any existing published layouts for this role
+    await db.update(roleDashboardLayouts)
+      .set({ isPublished: false, isDefault: false })
+      .where(and(
+        eq(roleDashboardLayouts.role, layout.role),
+        eq(roleDashboardLayouts.isPublished, true)
+      ));
+
+    // Publish this layout
+    const [updated] = await db.update(roleDashboardLayouts)
+      .set({ isPublished: true, isDefault: true, updatedAt: new Date() })
+      .where(eq(roleDashboardLayouts.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Dashboard Widget Instances
+  async getDashboardWidgetInstance(id: string): Promise<DashboardWidgetInstance | undefined> {
+    const [instance] = await db.select().from(dashboardWidgetInstances).where(eq(dashboardWidgetInstances.id, id));
+    return instance;
+  }
+
+  async getDashboardWidgetInstancesByLayout(layoutId: string): Promise<DashboardWidgetInstance[]> {
+    return db.select().from(dashboardWidgetInstances)
+      .where(eq(dashboardWidgetInstances.layoutId, layoutId))
+      .orderBy(dashboardWidgetInstances.positionY, dashboardWidgetInstances.positionX);
+  }
+
+  async createDashboardWidgetInstance(instance: InsertDashboardWidgetInstance): Promise<DashboardWidgetInstance> {
+    const [created] = await db.insert(dashboardWidgetInstances).values(instance).returning();
+    return created;
+  }
+
+  async updateDashboardWidgetInstance(id: string, instance: Partial<InsertDashboardWidgetInstance>): Promise<DashboardWidgetInstance | undefined> {
+    const [updated] = await db.update(dashboardWidgetInstances)
+      .set(instance)
+      .where(eq(dashboardWidgetInstances.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteDashboardWidgetInstance(id: string): Promise<boolean> {
+    const result = await db.delete(dashboardWidgetInstances).where(eq(dashboardWidgetInstances.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async deleteDashboardWidgetInstancesByLayout(layoutId: string): Promise<boolean> {
+    await db.delete(dashboardWidgetInstances).where(eq(dashboardWidgetInstances.layoutId, layoutId));
+    return true;
+  }
+
+  async saveDashboardLayout(layoutId: string, instances: InsertDashboardWidgetInstance[]): Promise<DashboardWidgetInstance[]> {
+    // Delete existing instances for this layout
+    await this.deleteDashboardWidgetInstancesByLayout(layoutId);
+
+    // Insert new instances
+    if (instances.length === 0) return [];
+    
+    const result = await db.insert(dashboardWidgetInstances)
+      .values(instances.map(i => ({ ...i, layoutId })))
+      .returning();
+    return result;
   }
 }
 

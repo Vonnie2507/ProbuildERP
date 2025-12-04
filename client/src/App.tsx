@@ -38,6 +38,7 @@ import OrganisationKnowledge from "@/pages/organisation/Knowledge";
 import LiveDocTemplates from "@/pages/LiveDocTemplates";
 import Import from "@/pages/Import";
 import Unauthorized from "@/pages/Unauthorized";
+import DashboardBuilder from "@/pages/DashboardBuilder";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -379,6 +380,20 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/import">
           <MainLayout>
             <Import />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/dashboard-builder/:rest*">
+        <ProtectedRoute path="/dashboard-builder">
+          <MainLayout>
+            <DashboardBuilder />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/dashboard-builder">
+        <ProtectedRoute path="/dashboard-builder">
+          <MainLayout>
+            <DashboardBuilder />
           </MainLayout>
         </ProtectedRoute>
       </Route>

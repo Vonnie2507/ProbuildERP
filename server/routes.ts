@@ -4778,5 +4778,224 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // DASHBOARD BUILDER ROUTES
+  // ============================================
+
+  // Get all available widgets
+  app.get("/api/dashboard-builder/widgets", requireRoles("admin"), async (req, res) => {
+    try {
+      const widgets = await storage.getActiveWidgets();
+      res.json(widgets);
+    } catch (error) {
+      console.error("Error fetching widgets:", error);
+      res.status(500).json({ error: "Failed to fetch widgets" });
+    }
+  });
+
+  // Get widgets by category
+  app.get("/api/dashboard-builder/widgets/category/:category", requireRoles("admin"), async (req, res) => {
+    try {
+      const widgets = await storage.getDashboardWidgetsByCategory(req.params.category);
+      res.json(widgets);
+    } catch (error) {
+      console.error("Error fetching widgets by category:", error);
+      res.status(500).json({ error: "Failed to fetch widgets" });
+    }
+  });
+
+  // Get all dashboard layouts
+  app.get("/api/dashboard-builder/layouts", requireRoles("admin"), async (req, res) => {
+    try {
+      const layouts = await storage.getRoleDashboardLayouts();
+      res.json(layouts);
+    } catch (error) {
+      console.error("Error fetching layouts:", error);
+      res.status(500).json({ error: "Failed to fetch layouts" });
+    }
+  });
+
+  // Get layouts for a specific role
+  app.get("/api/dashboard-builder/layouts/role/:role", requireRoles("admin"), async (req, res) => {
+    try {
+      const layouts = await storage.getRoleDashboardLayoutsByRole(req.params.role);
+      res.json(layouts);
+    } catch (error) {
+      console.error("Error fetching layouts by role:", error);
+      res.status(500).json({ error: "Failed to fetch layouts" });
+    }
+  });
+
+  // Get a specific layout with its widget instances
+  app.get("/api/dashboard-builder/layouts/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const layout = await storage.getRoleDashboardLayout(req.params.id);
+      if (!layout) {
+        return res.status(404).json({ error: "Layout not found" });
+      }
+      const instances = await storage.getDashboardWidgetInstancesByLayout(req.params.id);
+      const widgets = await storage.getDashboardWidgets();
+      
+      // Enrich instances with widget details
+      const enrichedInstances = instances.map(instance => {
+        const widget = widgets.find(w => w.id === instance.widgetId);
+        return { ...instance, widget };
+      });
+      
+      res.json({ ...layout, instances: enrichedInstances });
+    } catch (error) {
+      console.error("Error fetching layout:", error);
+      res.status(500).json({ error: "Failed to fetch layout" });
+    }
+  });
+
+  // Create a new layout
+  app.post("/api/dashboard-builder/layouts", requireRoles("admin"), async (req, res) => {
+    try {
+      const layout = await storage.createRoleDashboardLayout({
+        ...req.body,
+        createdBy: req.user?.id,
+        updatedBy: req.user?.id,
+      });
+      res.status(201).json(layout);
+    } catch (error) {
+      console.error("Error creating layout:", error);
+      res.status(500).json({ error: "Failed to create layout" });
+    }
+  });
+
+  // Update a layout
+  app.patch("/api/dashboard-builder/layouts/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const layout = await storage.updateRoleDashboardLayout(req.params.id, {
+        ...req.body,
+        updatedBy: req.user?.id,
+      });
+      if (!layout) {
+        return res.status(404).json({ error: "Layout not found" });
+      }
+      res.json(layout);
+    } catch (error) {
+      console.error("Error updating layout:", error);
+      res.status(500).json({ error: "Failed to update layout" });
+    }
+  });
+
+  // Delete a layout
+  app.delete("/api/dashboard-builder/layouts/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const deleted = await storage.deleteRoleDashboardLayout(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Layout not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting layout:", error);
+      res.status(500).json({ error: "Failed to delete layout" });
+    }
+  });
+
+  // Publish a layout (make it the active default for the role)
+  app.post("/api/dashboard-builder/layouts/:id/publish", requireRoles("admin"), async (req, res) => {
+    try {
+      const layout = await storage.publishRoleDashboardLayout(req.params.id);
+      if (!layout) {
+        return res.status(404).json({ error: "Layout not found" });
+      }
+      res.json(layout);
+    } catch (error) {
+      console.error("Error publishing layout:", error);
+      res.status(500).json({ error: "Failed to publish layout" });
+    }
+  });
+
+  // Save all widget instances for a layout (bulk update)
+  app.put("/api/dashboard-builder/layouts/:id/instances", requireRoles("admin"), async (req, res) => {
+    try {
+      const { instances } = req.body;
+      if (!Array.isArray(instances)) {
+        return res.status(400).json({ error: "instances must be an array" });
+      }
+      const savedInstances = await storage.saveDashboardLayout(req.params.id, instances);
+      res.json(savedInstances);
+    } catch (error) {
+      console.error("Error saving layout instances:", error);
+      res.status(500).json({ error: "Failed to save layout" });
+    }
+  });
+
+  // Add a widget instance to a layout
+  app.post("/api/dashboard-builder/layouts/:id/instances", requireRoles("admin"), async (req, res) => {
+    try {
+      const instance = await storage.createDashboardWidgetInstance({
+        ...req.body,
+        layoutId: req.params.id,
+      });
+      res.status(201).json(instance);
+    } catch (error) {
+      console.error("Error adding widget instance:", error);
+      res.status(500).json({ error: "Failed to add widget" });
+    }
+  });
+
+  // Update a widget instance
+  app.patch("/api/dashboard-builder/instances/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const instance = await storage.updateDashboardWidgetInstance(req.params.id, req.body);
+      if (!instance) {
+        return res.status(404).json({ error: "Widget instance not found" });
+      }
+      res.json(instance);
+    } catch (error) {
+      console.error("Error updating widget instance:", error);
+      res.status(500).json({ error: "Failed to update widget" });
+    }
+  });
+
+  // Delete a widget instance
+  app.delete("/api/dashboard-builder/instances/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const deleted = await storage.deleteDashboardWidgetInstance(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "Widget instance not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting widget instance:", error);
+      res.status(500).json({ error: "Failed to delete widget" });
+    }
+  });
+
+  // Get the published dashboard for a user's role (used by MyDashboard)
+  app.get("/api/dashboard/my-layout", async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const role = req.user.role;
+      const layout = await storage.getPublishedLayoutForRole(role);
+      
+      if (!layout) {
+        // Return null to indicate no custom layout - use default dashboard
+        return res.json(null);
+      }
+      
+      const instances = await storage.getDashboardWidgetInstancesByLayout(layout.id);
+      const widgets = await storage.getDashboardWidgets();
+      
+      // Enrich instances with widget details
+      const enrichedInstances = instances.map(instance => {
+        const widget = widgets.find(w => w.id === instance.widgetId);
+        return { ...instance, widget };
+      });
+      
+      res.json({ ...layout, instances: enrichedInstances });
+    } catch (error) {
+      console.error("Error fetching user dashboard:", error);
+      res.status(500).json({ error: "Failed to fetch dashboard" });
+    }
+  });
+
   return httpServer;
 }
