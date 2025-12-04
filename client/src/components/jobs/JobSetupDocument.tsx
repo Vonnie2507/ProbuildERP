@@ -49,7 +49,8 @@ import type {
 } from "@shared/schema";
 
 interface JobSetupDocumentProps {
-  jobId: string;
+  jobId?: string;
+  leadId?: string;
   jobType: "supply_only" | "supply_install";
 }
 
@@ -73,13 +74,22 @@ const SECTION_ICONS = {
   5: ClipboardList,
 };
 
-export function JobSetupDocument({ jobId, jobType }: JobSetupDocumentProps) {
+export function JobSetupDocument({ jobId, leadId, jobType }: JobSetupDocumentProps) {
   const { toast } = useToast();
   const [expandedSections, setExpandedSections] = useState<string[]>(["section-1"]);
+  
+  const isLeadMode = !!leadId && !jobId;
+  const resourceId = jobId || leadId;
+  const apiPath = isLeadMode 
+    ? `/api/leads/${leadId}/live-document`
+    : `/api/jobs/${jobId}/setup-document`;
+  const queryKey = isLeadMode 
+    ? ["/api/leads", leadId, "live-document"]
+    : ["/api/jobs", jobId, "setup-document"];
 
   const { data: document, isLoading } = useQuery<DocumentWithProducts>({
-    queryKey: ["/api/jobs", jobId, "setup-document"],
-    enabled: jobType === "supply_install",
+    queryKey,
+    enabled: jobType === "supply_install" && !!resourceId,
   });
 
   const updateSectionMutation = useMutation({
@@ -97,9 +107,7 @@ export function JobSetupDocument({ jobId, jobType }: JobSetupDocumentProps) {
       );
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/jobs", jobId, "setup-document"],
-      });
+      queryClient.invalidateQueries({ queryKey });
       toast({
         title: "Section Updated",
         description: "Changes have been saved",
@@ -129,9 +137,7 @@ export function JobSetupDocument({ jobId, jobType }: JobSetupDocumentProps) {
       );
     },
     onSuccess: (_, { sectionNumber, complete }) => {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/jobs", jobId, "setup-document"],
-      });
+      queryClient.invalidateQueries({ queryKey });
       toast({
         title: complete ? "Section Completed" : "Section Reopened",
         description: `Section ${sectionNumber} has been ${complete ? "marked complete" : "reopened for editing"}`,

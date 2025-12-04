@@ -40,6 +40,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { JobSetupDocument } from "@/components/jobs/JobSetupDocument";
 import type { Lead, Client, InsertLead, Quote, User } from "@shared/schema";
 
 type LeadStatus = "new" | "contacted" | "quoted" | "approved" | "declined";
@@ -1322,124 +1323,42 @@ export default function Leads() {
       </Sheet>
 
       <Dialog open={isSetupTemplateOpen} onOpenChange={setIsSetupTemplateOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90vh]">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5" />
-              Setup & Handover Template
+              Live Document - Setup & Handover
             </DialogTitle>
             <DialogDescription>
-              Preview of the 5-section document for supply & install jobs
+              {selectedLeadForTemplate && (
+                <span className="flex items-center gap-2">
+                  Lead: {selectedLeadForTemplate.leadNumber} - Fill in each section as you progress through the workflow
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           
           {selectedLeadForTemplate && (
-            <ScrollArea className="h-[60vh] pr-4">
-              <div className="space-y-4">
-                <div className="p-4 bg-muted/50 rounded-lg">
-                  <p className="text-sm text-muted-foreground mb-2">
-                    This template will be created automatically when a job is created from this lead.
-                    Once the job is created, you can fill out each section in the Jobs page.
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <Badge variant="default">Lead: {selectedLeadForTemplate.leadNumber}</Badge>
-                    <Badge variant="secondary">Supply & Install</Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <div className="p-1.5 rounded-full bg-muted">
-                          <MapPin className="h-4 w-4" />
-                        </div>
-                        Section 1: Sales & Site Info
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      Site conditions, access details, old fence removal, underground services,
-                      equipment needs, fence specifications, and client confirmation.
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <div className="p-1.5 rounded-full bg-muted">
-                          <Package className="h-4 w-4" />
-                        </div>
-                        Section 2: Products / BOM
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      Bill of Materials auto-populated from the approved quote.
-                      Verify product quantities and specifications before production.
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <div className="p-1.5 rounded-full bg-muted">
-                          <Wrench className="h-4 w-4" />
-                        </div>
-                        Section 3: Production Notes
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      Manufacturing checklist for posts, panels, gates, and hardware.
-                      Special production notes and quality requirements.
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <div className="p-1.5 rounded-full bg-muted">
-                          <CalendarDays className="h-4 w-4" />
-                        </div>
-                        Section 4: Scheduling
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      Install date, time window, team assignment, and equipment requirements.
-                      Scheduler notes and logistics coordination.
-                    </CardContent>
-                  </Card>
-
-                  <Card>
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <div className="p-1.5 rounded-full bg-muted">
-                          <CheckCircle className="h-4 w-4" />
-                        </div>
-                        Section 5: Install Notes & Sign-off
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm text-muted-foreground">
-                      Pre-start checklist, install progress notes, completion details,
-                      and client sign-off confirmation.
-                    </CardContent>
-                  </Card>
-                </div>
-
-                <div className="flex justify-end gap-2 pt-4">
-                  <Button variant="outline" onClick={() => setIsSetupTemplateOpen(false)}>
-                    Close
-                  </Button>
-                  <Button
-                    onClick={() => {
-                      setIsSetupTemplateOpen(false);
-                      setSelectedLeadForQuote(selectedLeadForTemplate);
-                      setIsQuoteBuilderOpen(true);
-                    }}
-                    data-testid="button-create-quote-from-template"
-                  >
-                    <FileText className="h-4 w-4 mr-2" />
-                    Create Quote
-                  </Button>
-                </div>
+            <ScrollArea className="h-[70vh] pr-4">
+              <JobSetupDocument
+                leadId={selectedLeadForTemplate.id}
+                jobType="supply_install"
+              />
+              <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                <Button variant="outline" onClick={() => setIsSetupTemplateOpen(false)}>
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsSetupTemplateOpen(false);
+                    setSelectedLeadForQuote(selectedLeadForTemplate);
+                    setIsQuoteBuilderOpen(true);
+                  }}
+                  data-testid="button-create-quote-from-template"
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Create Quote
+                </Button>
               </div>
             </ScrollArea>
           )}
