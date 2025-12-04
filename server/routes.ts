@@ -183,7 +183,7 @@ export async function registerRoutes(
   });
 
   // ============ DASHBOARD ============
-  app.get("/api/dashboard/stats", async (req, res) => {
+  app.get("/api/dashboard/stats", requireRoles("admin"), async (req, res) => {
     try {
       const stats = await storage.getDashboardStats();
       res.json(stats);
@@ -276,7 +276,8 @@ export async function registerRoutes(
   });
 
   // ============ GLOBAL SEARCH ============
-  app.get("/api/search", async (req, res) => {
+  // Only internal staff roles can search - excludes trade_client and installer
+  app.get("/api/search", requireRoles("admin", "sales", "scheduler", "production_manager", "warehouse"), async (req, res) => {
     try {
       const { q } = req.query;
       if (!q || typeof q !== "string" || q.length < 2) {
@@ -303,7 +304,7 @@ export async function registerRoutes(
   });
 
   // ============ CLIENTS ============
-  app.get("/api/clients", async (req, res) => {
+  app.get("/api/clients", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const { type, search } = req.query;
       let clients;
@@ -321,7 +322,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/clients/:id", async (req, res) => {
+  app.get("/api/clients/:id", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const client = await storage.getClient(req.params.id);
       if (!client) {
@@ -334,7 +335,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/clients", async (req, res) => {
+  app.post("/api/clients", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const validatedData = insertClientSchema.parse(req.body);
       const client = await storage.createClient(validatedData);
@@ -348,7 +349,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/clients/:id", async (req, res) => {
+  app.patch("/api/clients/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const client = await storage.updateClient(req.params.id, req.body);
       if (!client) {
@@ -361,7 +362,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/clients/:id", async (req, res) => {
+  app.delete("/api/clients/:id", requireRoles("admin"), async (req, res) => {
     try {
       await storage.deleteClient(req.params.id);
       res.status(204).send();
@@ -372,7 +373,7 @@ export async function registerRoutes(
   });
 
   // Get client's quotes
-  app.get("/api/clients/:id/quotes", async (req, res) => {
+  app.get("/api/clients/:id/quotes", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const quotes = await storage.getQuotesByClient(req.params.id);
       res.json(quotes);
@@ -383,7 +384,7 @@ export async function registerRoutes(
   });
 
   // Get client's jobs
-  app.get("/api/clients/:id/jobs", async (req, res) => {
+  app.get("/api/clients/:id/jobs", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const jobs = await storage.getJobsByClient(req.params.id);
       res.json(jobs);
@@ -394,7 +395,7 @@ export async function registerRoutes(
   });
 
   // Get client's payments
-  app.get("/api/clients/:id/payments", async (req, res) => {
+  app.get("/api/clients/:id/payments", requireRoles("admin"), async (req, res) => {
     try {
       const payments = await storage.getPaymentsByClient(req.params.id);
       res.json(payments);
@@ -531,7 +532,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/leads/:id", async (req, res) => {
+  app.patch("/api/leads/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { clientName, clientPhone, clientEmail, clientId: passedClientId, ...rawLeadData } = req.body;
       
@@ -676,7 +677,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/leads/:id", async (req, res) => {
+  app.delete("/api/leads/:id", requireRoles("admin"), async (req, res) => {
     try {
       await storage.deleteLead(req.params.id);
       res.status(204).send();
@@ -687,7 +688,7 @@ export async function registerRoutes(
   });
 
   // Lead Activities
-  app.get("/api/leads/:leadId/activities", async (req, res) => {
+  app.get("/api/leads/:leadId/activities", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const activities = await storage.getLeadActivities(req.params.leadId);
       res.json(activities);
@@ -697,7 +698,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/leads/:leadId/activities", async (req, res) => {
+  app.post("/api/leads/:leadId/activities", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { activityType, title, description, metadata,
         callDirection, callTimestamp, callDurationSeconds, staffMemberId,
@@ -742,7 +743,7 @@ export async function registerRoutes(
   });
 
   // Get single activity with linked tasks
-  app.get("/api/lead-activities/:id", async (req, res) => {
+  app.get("/api/lead-activities/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const activity = await storage.getLeadActivity(req.params.id);
       if (!activity) {
@@ -758,7 +759,7 @@ export async function registerRoutes(
   });
 
   // Update lead activity (for call logs - edit notes, direction, staff member)
-  app.patch("/api/lead-activities/:id", async (req, res) => {
+  app.patch("/api/lead-activities/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { callNotes, callDirection, staffMemberId, aiSummaryText, 
               callTranscriptionText, transcriptionStatus } = req.body;
@@ -784,7 +785,7 @@ export async function registerRoutes(
   });
 
   // Delete lead activity (call log)
-  app.delete("/api/lead-activities/:id", async (req, res) => {
+  app.delete("/api/lead-activities/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       // Clear the sourceActivityId from any linked tasks before deleting
       const linkedTasks = await storage.getTasksByActivityId(req.params.id);
@@ -801,7 +802,7 @@ export async function registerRoutes(
   });
 
   // Get tasks linked to a specific activity (call log)
-  app.get("/api/lead-activities/:id/tasks", async (req, res) => {
+  app.get("/api/lead-activities/:id/tasks", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const tasks = await storage.getTasksByActivityId(req.params.id);
       res.json(tasks);
@@ -812,7 +813,7 @@ export async function registerRoutes(
   });
 
   // Lead Tasks
-  app.get("/api/leads/:leadId/tasks", async (req, res) => {
+  app.get("/api/leads/:leadId/tasks", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const tasks = await storage.getLeadTasks(req.params.leadId);
       res.json(tasks);
@@ -822,7 +823,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/leads/:leadId/tasks", async (req, res) => {
+  app.post("/api/leads/:leadId/tasks", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { title, description, dueDate, priority, assignedTo, sourceActivityId } = req.body;
       
@@ -855,7 +856,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/lead-tasks/:id", async (req, res) => {
+  app.patch("/api/lead-tasks/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { status, title, description, priority, dueDate, assignedTo } = req.body;
       
@@ -889,7 +890,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/lead-tasks/:id", async (req, res) => {
+  app.delete("/api/lead-tasks/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       await storage.deleteLeadTask(req.params.id);
       res.status(204).send();
@@ -900,7 +901,7 @@ export async function registerRoutes(
   });
 
   // Convert lead to quote
-  app.post("/api/leads/:id/convert-to-quote", async (req, res) => {
+  app.post("/api/leads/:id/convert-to-quote", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const lead = await storage.getLead(req.params.id);
       if (!lead) {
@@ -960,7 +961,7 @@ export async function registerRoutes(
   });
 
   // ============ PRODUCTS / INVENTORY ============
-  app.get("/api/products", async (req, res) => {
+  app.get("/api/products", requireRoles("admin", "sales", "production_manager", "warehouse"), async (req, res) => {
     try {
       const { category, lowStock } = req.query;
       let products;
@@ -978,7 +979,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/products/:id", async (req, res) => {
+  app.get("/api/products/:id", requireRoles("admin", "sales", "production_manager", "warehouse"), async (req, res) => {
     try {
       const product = await storage.getProduct(req.params.id);
       if (!product) {
@@ -991,7 +992,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/products", async (req, res) => {
+  app.post("/api/products", requireRoles("admin", "production_manager", "warehouse"), async (req, res) => {
     try {
       const validatedData = insertProductSchema.parse(req.body);
       const product = await storage.createProduct(validatedData);
@@ -1005,7 +1006,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/products/:id", async (req, res) => {
+  app.patch("/api/products/:id", requireRoles("admin", "production_manager", "warehouse"), async (req, res) => {
     try {
       const product = await storage.updateProduct(req.params.id, req.body);
       if (!product) {
@@ -1018,7 +1019,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/products/:id/stock", async (req, res) => {
+  app.patch("/api/products/:id/stock", requireRoles("admin", "production_manager", "warehouse"), async (req, res) => {
     try {
       const { quantity } = req.body;
       const product = await storage.updateStock(req.params.id, quantity);
@@ -1032,7 +1033,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/products/:id", async (req, res) => {
+  app.delete("/api/products/:id", requireRoles("admin"), async (req, res) => {
     try {
       await storage.deleteProduct(req.params.id);
       res.status(204).send();
@@ -1043,7 +1044,7 @@ export async function registerRoutes(
   });
 
   // ============ QUOTES ============
-  app.get("/api/quotes", async (req, res) => {
+  app.get("/api/quotes", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { status, clientId } = req.query;
       let quotes;
@@ -1061,7 +1062,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/quotes/next-number", async (req, res) => {
+  app.get("/api/quotes/next-number", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const number = await storage.getNextQuoteNumber();
       res.json({ quoteNumber: number });
@@ -1071,7 +1072,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/quotes/analytics", async (req, res) => {
+  app.get("/api/quotes/analytics", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const analytics = await storage.getQuoteAnalytics();
       res.json(analytics);
@@ -1081,7 +1082,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/quotes/:id", async (req, res) => {
+  app.get("/api/quotes/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const quote = await storage.getQuote(req.params.id);
       if (!quote) {
@@ -1094,7 +1095,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/quotes", async (req, res) => {
+  app.post("/api/quotes", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const quoteNumber = await storage.getNextQuoteNumber();
       const validatedData = insertQuoteSchema.parse({
@@ -1127,7 +1128,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/quotes/:id", async (req, res) => {
+  app.patch("/api/quotes/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const oldQuote = await storage.getQuote(req.params.id);
       const quote = await storage.updateQuote(req.params.id, req.body);
@@ -1163,7 +1164,7 @@ export async function registerRoutes(
   });
 
   // Send quote
-  app.post("/api/quotes/:id/send", async (req, res) => {
+  app.post("/api/quotes/:id/send", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const quote = await storage.updateQuote(req.params.id, {
         status: "sent",
@@ -1180,7 +1181,7 @@ export async function registerRoutes(
   });
 
   // Accept quote and create job
-  app.post("/api/quotes/:id/accept", async (req, res) => {
+  app.post("/api/quotes/:id/accept", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const quote = await storage.getQuote(req.params.id);
       if (!quote) {
@@ -1255,7 +1256,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/quotes/:id", async (req, res) => {
+  app.delete("/api/quotes/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       await storage.deleteQuote(req.params.id);
       res.status(204).send();
@@ -1266,7 +1267,7 @@ export async function registerRoutes(
   });
 
   // ============ JOBS ============
-  app.get("/api/jobs", async (req, res) => {
+  app.get("/api/jobs", requireRoles("admin", "sales", "scheduler", "production_manager", "warehouse", "installer"), async (req, res) => {
     try {
       const { status, clientId, installerId } = req.query;
       let jobs;
@@ -1286,7 +1287,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/jobs/:id", async (req, res) => {
+  app.get("/api/jobs/:id", requireRoles("admin", "sales", "scheduler", "production_manager", "warehouse", "installer"), async (req, res) => {
     try {
       const job = await storage.getJob(req.params.id);
       if (!job) {
@@ -1299,7 +1300,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/jobs/:id", async (req, res) => {
+  app.patch("/api/jobs/:id", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const job = await storage.updateJob(req.params.id, req.body);
       if (!job) {
@@ -1313,7 +1314,7 @@ export async function registerRoutes(
   });
 
   // Update job status
-  app.patch("/api/jobs/:id/status", async (req, res) => {
+  app.patch("/api/jobs/:id/status", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const { status, bypassValidation } = req.body;
       const oldJob = await storage.getJob(req.params.id);
@@ -1428,7 +1429,7 @@ export async function registerRoutes(
   });
 
   // Get job BOM
-  app.get("/api/jobs/:id/bom", async (req, res) => {
+  app.get("/api/jobs/:id/bom", requireRoles("admin", "sales", "scheduler", "production_manager", "warehouse"), async (req, res) => {
     try {
       const bomData = await storage.getBOMByJob(req.params.id);
       if (!bomData) {
@@ -1442,7 +1443,7 @@ export async function registerRoutes(
   });
 
   // Create/Update job BOM
-  app.post("/api/jobs/:id/bom", async (req, res) => {
+  app.post("/api/jobs/:id/bom", requireRoles("admin", "production_manager"), async (req, res) => {
     try {
       const existingBOM = await storage.getBOMByJob(req.params.id);
       if (existingBOM) {
@@ -1466,7 +1467,7 @@ export async function registerRoutes(
   });
 
   // Get job production tasks
-  app.get("/api/jobs/:id/production-tasks", async (req, res) => {
+  app.get("/api/jobs/:id/production-tasks", requireRoles("admin", "scheduler", "production_manager", "warehouse"), async (req, res) => {
     try {
       const tasks = await storage.getProductionTasksByJob(req.params.id);
       res.json(tasks);
@@ -1477,7 +1478,7 @@ export async function registerRoutes(
   });
 
   // Get job install tasks
-  app.get("/api/jobs/:id/install-tasks", async (req, res) => {
+  app.get("/api/jobs/:id/install-tasks", requireRoles("admin", "scheduler", "production_manager", "installer"), async (req, res) => {
     try {
       const tasks = await storage.getInstallTasksByJob(req.params.id);
       res.json(tasks);
@@ -1488,7 +1489,7 @@ export async function registerRoutes(
   });
 
   // Get job payments
-  app.get("/api/jobs/:id/payments", async (req, res) => {
+  app.get("/api/jobs/:id/payments", requireRoles("admin"), async (req, res) => {
     try {
       const payments = await storage.getPaymentsByJob(req.params.id);
       res.json(payments);
@@ -1499,7 +1500,7 @@ export async function registerRoutes(
   });
 
   // ============ PRODUCTION TASKS ============
-  app.get("/api/production-tasks", async (req, res) => {
+  app.get("/api/production-tasks", requireRoles("admin", "production_manager", "warehouse"), async (req, res) => {
     try {
       const { status, assignee, jobId } = req.query;
       let tasks;
@@ -1519,7 +1520,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/production-tasks", async (req, res) => {
+  app.post("/api/production-tasks", requireRoles("admin", "production_manager"), async (req, res) => {
     try {
       const validatedData = insertProductionTaskSchema.parse(req.body);
       const task = await storage.createProductionTask(validatedData);
@@ -1682,7 +1683,7 @@ export async function registerRoutes(
   });
 
   // ============ SCHEDULE EVENTS ============
-  app.get("/api/schedule", async (req, res) => {
+  app.get("/api/schedule", requireRoles("admin", "scheduler", "production_manager", "installer"), async (req, res) => {
     try {
       const { start, end, assignee } = req.query;
       let events;
@@ -1703,7 +1704,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/schedule", async (req, res) => {
+  app.post("/api/schedule", requireRoles("admin", "scheduler"), async (req, res) => {
     try {
       const body = {
         ...req.body,
@@ -1722,7 +1723,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/schedule/:id", async (req, res) => {
+  app.patch("/api/schedule/:id", requireRoles("admin", "scheduler"), async (req, res) => {
     try {
       const body = { ...req.body };
       if (body.startDate) body.startDate = new Date(body.startDate);
@@ -1739,7 +1740,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/schedule/:id", async (req, res) => {
+  app.delete("/api/schedule/:id", requireRoles("admin", "scheduler"), async (req, res) => {
     try {
       await storage.deleteScheduleEvent(req.params.id);
       res.status(204).send();
@@ -3029,7 +3030,7 @@ export async function registerRoutes(
   });
 
   // Quote Cost Components
-  app.get("/api/quotes/:quoteId/costs", async (req, res) => {
+  app.get("/api/quotes/:quoteId/costs", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const components = await storage.getQuoteCostComponentsByQuote(req.params.quoteId);
       res.json(components);
@@ -3039,7 +3040,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/quotes/:quoteId/costs", async (req, res) => {
+  app.post("/api/quotes/:quoteId/costs", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const component = await storage.createQuoteCostComponent({
         ...req.body,
@@ -3054,7 +3055,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/quotes/:quoteId/costs/:id", async (req, res) => {
+  app.patch("/api/quotes/:quoteId/costs/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const component = await storage.updateQuoteCostComponent(req.params.id, req.body);
       if (!component) {
@@ -3069,7 +3070,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/quotes/:quoteId/costs/:id", async (req, res) => {
+  app.delete("/api/quotes/:quoteId/costs/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       await storage.deleteQuoteCostComponent(req.params.id);
       // Recalculate summary
@@ -3082,7 +3083,7 @@ export async function registerRoutes(
   });
 
   // Quote Trips
-  app.get("/api/quotes/:quoteId/trips", async (req, res) => {
+  app.get("/api/quotes/:quoteId/trips", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const trips = await storage.getQuoteTripsByQuote(req.params.quoteId);
       res.json(trips);
@@ -3092,7 +3093,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/quotes/:quoteId/trips", async (req, res) => {
+  app.post("/api/quotes/:quoteId/trips", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const trip = await storage.createQuoteTrip({
         ...req.body,
@@ -3108,7 +3109,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/quotes/:quoteId/trips/:id", async (req, res) => {
+  app.patch("/api/quotes/:quoteId/trips/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const data = { ...req.body };
       if (data.scheduledDate) data.scheduledDate = new Date(data.scheduledDate);
@@ -3125,7 +3126,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/quotes/:quoteId/trips/:id", async (req, res) => {
+  app.delete("/api/quotes/:quoteId/trips/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       await storage.deleteQuoteTrip(req.params.id);
       // Recalculate summary
@@ -3138,7 +3139,7 @@ export async function registerRoutes(
   });
 
   // Quote Admin Time
-  app.get("/api/quotes/:quoteId/admin-time", async (req, res) => {
+  app.get("/api/quotes/:quoteId/admin-time", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const adminTime = await storage.getQuoteAdminTimeByQuote(req.params.quoteId);
       res.json(adminTime);
@@ -3148,7 +3149,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/quotes/:quoteId/admin-time", async (req, res) => {
+  app.post("/api/quotes/:quoteId/admin-time", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const adminTime = await storage.createQuoteAdminTime({
         ...req.body,
@@ -3163,7 +3164,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/quotes/:quoteId/admin-time/:id", async (req, res) => {
+  app.patch("/api/quotes/:quoteId/admin-time/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const adminTime = await storage.updateQuoteAdminTime(req.params.id, req.body);
       if (!adminTime) {
@@ -3178,7 +3179,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/quotes/:quoteId/admin-time/:id", async (req, res) => {
+  app.delete("/api/quotes/:quoteId/admin-time/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       await storage.deleteQuoteAdminTime(req.params.id);
       // Recalculate summary
@@ -3291,7 +3292,7 @@ export async function registerRoutes(
   });
 
   // Quote Ground Conditions
-  app.get("/api/quotes/:quoteId/ground-conditions", async (req, res) => {
+  app.get("/api/quotes/:quoteId/ground-conditions", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const conditions = await storage.getQuoteGroundConditionsByQuote(req.params.quoteId);
       res.json(conditions);
@@ -3301,7 +3302,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/quotes/:quoteId/ground-conditions", async (req, res) => {
+  app.post("/api/quotes/:quoteId/ground-conditions", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const condition = await storage.createQuoteGroundCondition({
         ...req.body,
@@ -3316,7 +3317,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/quotes/:quoteId/ground-conditions/:id", async (req, res) => {
+  app.patch("/api/quotes/:quoteId/ground-conditions/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const condition = await storage.updateQuoteGroundCondition(req.params.id, req.body);
       if (!condition) {
@@ -3331,7 +3332,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/quotes/:quoteId/ground-conditions/:id", async (req, res) => {
+  app.delete("/api/quotes/:quoteId/ground-conditions/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       await storage.deleteQuoteGroundCondition(req.params.id);
       // Recalculate summary
@@ -3344,7 +3345,7 @@ export async function registerRoutes(
   });
 
   // Quote P&L Summary
-  app.get("/api/quotes/:quoteId/pl-summary", async (req, res) => {
+  app.get("/api/quotes/:quoteId/pl-summary", requireRoles("admin", "sales"), async (req, res) => {
     try {
       let summary = await storage.getQuotePLSummaryByQuote(req.params.quoteId);
       
@@ -3364,7 +3365,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/quotes/:quoteId/pl-summary/recalculate", async (req, res) => {
+  app.post("/api/quotes/:quoteId/pl-summary/recalculate", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const summary = await storage.recalculateQuotePLSummary(req.params.quoteId);
       if (!summary) {
@@ -3378,7 +3379,7 @@ export async function registerRoutes(
   });
 
   // Job-based P&L (for completed jobs)
-  app.get("/api/jobs/:jobId/costs", async (req, res) => {
+  app.get("/api/jobs/:jobId/costs", requireRoles("admin", "sales", "production_manager"), async (req, res) => {
     try {
       const components = await storage.getQuoteCostComponentsByJob(req.params.jobId);
       res.json(components);
@@ -3388,7 +3389,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/jobs/:jobId/trips", async (req, res) => {
+  app.get("/api/jobs/:jobId/trips", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const trips = await storage.getQuoteTripsByJob(req.params.jobId);
       res.json(trips);
@@ -3398,7 +3399,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/jobs/:jobId/admin-time", async (req, res) => {
+  app.get("/api/jobs/:jobId/admin-time", requireRoles("admin", "sales", "production_manager"), async (req, res) => {
     try {
       const adminTime = await storage.getQuoteAdminTimeByJob(req.params.jobId);
       res.json(adminTime);
@@ -3408,7 +3409,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/jobs/:jobId/pl-summary", async (req, res) => {
+  app.get("/api/jobs/:jobId/pl-summary", requireRoles("admin"), async (req, res) => {
     try {
       const summary = await storage.getQuotePLSummaryByJob(req.params.jobId);
       if (!summary) {
@@ -4091,7 +4092,7 @@ export async function registerRoutes(
   });
 
   // Get job setup document by job ID (auto-creates for supply_install jobs if not exists)
-  app.get("/api/jobs/:jobId/setup-document", async (req, res) => {
+  app.get("/api/jobs/:jobId/setup-document", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       let document = await storage.getJobSetupDocumentByJob(req.params.jobId);
       
@@ -4144,7 +4145,7 @@ export async function registerRoutes(
   });
 
   // Get live document by lead ID (auto-creates for supply_install leads if not exists)
-  app.get("/api/leads/:leadId/live-document", async (req, res) => {
+  app.get("/api/leads/:leadId/live-document", requireRoles("admin", "sales"), async (req, res) => {
     try {
       let document = await storage.getJobSetupDocumentByLead(req.params.leadId);
       
@@ -4451,7 +4452,7 @@ export async function registerRoutes(
   });
 
   // Validate if job can transition to a new status (based on setup document completion)
-  app.get("/api/jobs/:jobId/validate-status-change", async (req, res) => {
+  app.get("/api/jobs/:jobId/validate-status-change", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
     try {
       const { newStatus } = req.query;
       if (!newStatus || typeof newStatus !== "string") {
