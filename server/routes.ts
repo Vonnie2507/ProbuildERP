@@ -172,18 +172,65 @@ export async function registerRoutes(
   // ============ WEATHER (PERTH, WA) ============
   app.get("/api/weather/perth", async (req, res) => {
     try {
+      // Perth coordinates: -31.9523, 115.8613
+      const weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=-31.9523&longitude=115.8613&current=temperature_2m,relative_humidity_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=Australia%2FPerth";
+      
+      const response = await fetch(weatherUrl);
+      if (!response.ok) {
+        throw new Error("Failed to fetch weather data");
+      }
+      
+      const data = await response.json();
+      
+      // Map weather codes to conditions
+      const weatherCodeMap: Record<number, string> = {
+        0: "Clear",
+        1: "Mainly Clear",
+        2: "Partly Cloudy",
+        3: "Overcast",
+        45: "Foggy",
+        48: "Foggy",
+        51: "Light Drizzle",
+        53: "Drizzle",
+        55: "Heavy Drizzle",
+        61: "Light Rain",
+        63: "Rain",
+        65: "Heavy Rain",
+        71: "Light Snow",
+        73: "Snow",
+        75: "Heavy Snow",
+        80: "Light Showers",
+        81: "Showers",
+        82: "Heavy Showers",
+        95: "Thunderstorm",
+        96: "Thunderstorm",
+        99: "Thunderstorm",
+      };
+      
+      const weatherCode = data.current?.weather_code || 0;
+      const condition = weatherCodeMap[weatherCode] || "Clear";
+      
       const perthWeather = {
         location: "Perth, WA",
-        temperature: 24 + Math.floor(Math.random() * 6),
-        condition: ["Sunny", "Partly Cloudy", "Clear", "Fine"][Math.floor(Math.random() * 4)],
-        minTemp: 18 + Math.floor(Math.random() * 3),
-        maxTemp: 28 + Math.floor(Math.random() * 5),
-        humidity: 40 + Math.floor(Math.random() * 20),
+        temperature: Math.round(data.current?.temperature_2m || 25),
+        condition,
+        minTemp: Math.round(data.daily?.temperature_2m_min?.[0] || 18),
+        maxTemp: Math.round(data.daily?.temperature_2m_max?.[0] || 30),
+        humidity: Math.round(data.current?.relative_humidity_2m || 50),
       };
+      
       res.json(perthWeather);
     } catch (error) {
       console.error("Error fetching weather:", error);
-      res.status(500).json({ error: "Failed to fetch weather" });
+      // Return fallback data if API fails
+      res.json({
+        location: "Perth, WA",
+        temperature: 25,
+        condition: "Unable to fetch",
+        minTemp: 18,
+        maxTemp: 30,
+        humidity: 50,
+      });
     }
   });
 
