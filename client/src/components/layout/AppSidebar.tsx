@@ -22,6 +22,7 @@ import {
   Shield,
   FolderOpen,
   BookOpen,
+  FileStack,
 } from "lucide-react";
 import {
   Sidebar,
@@ -68,6 +69,10 @@ const installerItems = [
 
 const tradeItems = [
   { title: "Trade Portal", url: "/trade", icon: Building2 },
+];
+
+const liveDocsItems = [
+  { title: "Templates", url: "/live-doc-templates", icon: FileStack },
 ];
 
 const organisationItems = [
@@ -177,6 +182,24 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {analyticsItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                    <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Live Documents</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {liveDocsItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <Link href={item.url} data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}>

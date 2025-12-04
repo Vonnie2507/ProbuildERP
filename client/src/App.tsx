@@ -30,6 +30,7 @@ import OrganisationWorkflows from "@/pages/organisation/Workflows";
 import OrganisationPolicies from "@/pages/organisation/Policies";
 import OrganisationResources from "@/pages/organisation/Resources";
 import OrganisationKnowledge from "@/pages/organisation/Knowledge";
+import LiveDocTemplates from "@/pages/LiveDocTemplates";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -157,6 +158,11 @@ function Router() {
       <Route path="/organisation/knowledge">
         <MainLayout>
           <OrganisationKnowledge />
+        </MainLayout>
+      </Route>
+      <Route path="/live-doc-templates">
+        <MainLayout>
+          <LiveDocTemplates />
         </MainLayout>
       </Route>
       <Route component={NotFound} />
