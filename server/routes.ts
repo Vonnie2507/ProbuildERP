@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { 
@@ -20,6 +20,30 @@ import {
 import { z } from "zod";
 import Stripe from "stripe";
 import { getTwilioClient, getTwilioFromPhoneNumber } from "./twilio";
+
+type UserRole = "admin" | "sales" | "scheduler" | "production_manager" | "warehouse" | "installer" | "trade_client";
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId || !req.session.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  next();
+}
+
+function requireRoles(...allowedRoles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.session.userId || !req.session.user) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    const userRole = req.session.user.role as UserRole;
+    if (!allowedRoles.includes(userRole)) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    
+    next();
+  };
+}
 
 const stripe = process.env.STRIPE_SECRET_KEY 
   ? new Stripe(process.env.STRIPE_SECRET_KEY, {
@@ -381,7 +405,7 @@ export async function registerRoutes(
   });
 
   // ============ LEADS ============
-  app.get("/api/leads", async (req, res) => {
+  app.get("/api/leads", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { stage, assignee } = req.query;
       let leads;
@@ -399,7 +423,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/leads/:id", async (req, res) => {
+  app.get("/api/leads/:id", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const lead = await storage.getLead(req.params.id);
       if (!lead) {
@@ -412,7 +436,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/leads", async (req, res) => {
+  app.post("/api/leads", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const { clientName, clientPhone, clientEmail, ...leadData } = req.body;
       
@@ -1726,7 +1750,7 @@ export async function registerRoutes(
   });
 
   // ============ PAYMENTS ============
-  app.get("/api/payments", async (req, res) => {
+  app.get("/api/payments", requireRoles("admin"), async (req, res) => {
     try {
       const { status, clientId, jobId } = req.query;
       let payments;
@@ -1746,7 +1770,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/payments", async (req, res) => {
+  app.post("/api/payments", requireRoles("admin"), async (req, res) => {
     try {
       const validatedData = insertPaymentSchema.parse(req.body);
       const payment = await storage.createPayment(validatedData);
@@ -1760,7 +1784,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/payments/:id", async (req, res) => {
+  app.patch("/api/payments/:id", requireRoles("admin"), async (req, res) => {
     try {
       const oldPayment = await storage.getPayment(req.params.id);
       const payment = await storage.updatePayment(req.params.id, req.body);
