@@ -520,6 +520,215 @@ export const automationCampaigns = pgTable("automation_campaigns", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+// ============================================
+// PROFIT & LOSS COST TRACKING SYSTEM
+// ============================================
+
+// Trip type enum - different types of site visits
+export const tripTypeEnum = pgEnum("trip_type", [
+  "site_quote",        // Initial site measurement/quote
+  "post_install",      // Installing posts
+  "panel_install",     // Installing panels
+  "gate_install",      // Installing sliding gate
+  "welder_dropoff",    // Dropping materials at welder
+  "welder_pickup",     // Picking up from welder
+  "powder_coat_dropoff", // Dropping at powder coater
+  "powder_coat_pickup",  // Picking up from powder coater
+  "supplier_delivery",   // Supplier delivering materials
+  "follow_up",           // Follow-up visit
+  "warranty"             // Warranty/repair visit
+]);
+
+// Admin activity type enum
+export const adminActivityEnum = pgEnum("admin_activity_type", [
+  "quote_creation",      // Time spent creating the quote
+  "client_messaging",    // SMS/email correspondence
+  "client_call",         // Phone calls
+  "spec_gathering",      // Getting fence specifications
+  "scheduling",          // Scheduling activities
+  "invoicing",           // Creating/sending invoices
+  "follow_up",           // Following up on quote/payment
+  "general_admin"        // Other admin tasks
+]);
+
+// Travel status enum
+export const travelStatusEnum = pgEnum("travel_status", [
+  "not_started",
+  "in_transit",
+  "arrived",
+  "completed",
+  "cancelled"
+]);
+
+// Ground condition enum - affects installation costs
+export const groundConditionEnum = pgEnum("ground_condition", [
+  "standard",           // Normal ground, no obstacles
+  "rocky",              // Rocky ground - extra work
+  "concrete",           // Existing concrete/footings
+  "existing_fence",     // Need to remove existing fence
+  "existing_footings",  // Need to remove existing footings
+  "sloped",             // Sloped ground
+  "sandy",              // Sandy soil
+  "clay"                // Clay soil
+]);
+
+// Material source enum - where products come from
+export const materialSourceEnum = pgEnum("material_source", [
+  "manufactured",       // Made in-house (PVC)
+  "glass_supplier",     // External glass supplier
+  "colorbond_supplier", // External colorbond supplier
+  "hardware_supplier",  // Hardware/accessories
+  "other"
+]);
+
+// Staff Rate Cards - configurable hourly rates by role
+export const staffRateCards = pgTable("staff_rate_cards", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").references(() => users.id),
+  role: userRoleEnum("role"),
+  rateType: text("rate_type").notNull(), // manufacturing, installation, admin, travel
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).notNull(),
+  effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
+  effectiveUntil: timestamp("effective_until"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Quote Cost Components - individual cost line items for a quote/job
+export const quoteCostComponents = pgTable("quote_cost_components", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id).notNull(),
+  jobId: varchar("job_id").references(() => jobs.id),
+  category: text("category").notNull(), // materials, manufacturing_labour, install_labour, travel, admin, supplier_fees, third_party
+  description: text("description").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull().default("1"),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 10, scale: 2 }).notNull(),
+  staffId: varchar("staff_id").references(() => users.id),
+  materialSource: materialSourceEnum("material_source"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Quote Trips - track each site visit with time and mileage
+export const quoteTrips = pgTable("quote_trips", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id),
+  jobId: varchar("job_id").references(() => jobs.id),
+  tripType: tripTypeEnum("trip_type").notNull(),
+  staffId: varchar("staff_id").references(() => users.id).notNull(),
+  scheduledDate: timestamp("scheduled_date"),
+  actualDate: timestamp("actual_date"),
+  departureTime: timestamp("departure_time"),
+  arrivalTime: timestamp("arrival_time"),
+  departureReturnTime: timestamp("departure_return_time"),
+  returnArrivalTime: timestamp("return_arrival_time"),
+  startLocation: text("start_location"),
+  endLocation: text("end_location"),
+  distanceKm: decimal("distance_km", { precision: 10, scale: 2 }),
+  durationMinutes: integer("duration_minutes"),
+  fuelCost: decimal("fuel_cost", { precision: 10, scale: 2 }),
+  travelCostTotal: decimal("travel_cost_total", { precision: 10, scale: 2 }),
+  status: travelStatusEnum("status").notNull().default("not_started"),
+  clientNotified: boolean("client_notified").default(false),
+  clientNotifiedAt: timestamp("client_notified_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Quote Admin Time - track time spent on admin activities
+export const quoteAdminTime = pgTable("quote_admin_time", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id),
+  jobId: varchar("job_id").references(() => jobs.id),
+  staffId: varchar("staff_id").references(() => users.id).notNull(),
+  activityType: adminActivityEnum("activity_type").notNull(),
+  durationMinutes: integer("duration_minutes").notNull(),
+  description: text("description"),
+  hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }),
+  totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
+  startTime: timestamp("start_time"),
+  endTime: timestamp("end_time"),
+  isAutoTracked: boolean("is_auto_tracked").default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Travel Sessions - active navigation sessions for real-time tracking
+export const travelSessions = pgTable("travel_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tripId: varchar("trip_id").references(() => quoteTrips.id).notNull(),
+  staffId: varchar("staff_id").references(() => users.id).notNull(),
+  clientId: varchar("client_id").references(() => clients.id),
+  startLatitude: decimal("start_latitude", { precision: 10, scale: 7 }),
+  startLongitude: decimal("start_longitude", { precision: 10, scale: 7 }),
+  currentLatitude: decimal("current_latitude", { precision: 10, scale: 7 }),
+  currentLongitude: decimal("current_longitude", { precision: 10, scale: 7 }),
+  endLatitude: decimal("end_latitude", { precision: 10, scale: 7 }),
+  endLongitude: decimal("end_longitude", { precision: 10, scale: 7 }),
+  estimatedArrivalTime: timestamp("estimated_arrival_time"),
+  actualArrivalTime: timestamp("actual_arrival_time"),
+  status: travelStatusEnum("status").notNull().default("not_started"),
+  clientNotificationSent: boolean("client_notification_sent").default(false),
+  clientNotificationSentAt: timestamp("client_notification_sent_at"),
+  twilioMessageSid: text("twilio_message_sid"),
+  routeData: jsonb("route_data"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Quote Ground Conditions - track site conditions affecting costs
+export const quoteGroundConditions = pgTable("quote_ground_conditions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id).notNull(),
+  condition: groundConditionEnum("condition").notNull(),
+  affectedLengthMeters: decimal("affected_length_meters", { precision: 10, scale: 2 }),
+  additionalCost: decimal("additional_cost", { precision: 10, scale: 2 }),
+  additionalTimeMinutes: integer("additional_time_minutes"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Quote P&L Summary - aggregated profit/loss data for quick access
+export const quotePLSummary = pgTable("quote_pl_summary", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  quoteId: varchar("quote_id").references(() => quotes.id).notNull().unique(),
+  jobId: varchar("job_id").references(() => jobs.id),
+  
+  // Revenue
+  totalRevenue: decimal("total_revenue", { precision: 10, scale: 2 }).notNull().default("0"),
+  
+  // Costs by category
+  materialsCost: decimal("materials_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  manufacturingLabourCost: decimal("manufacturing_labour_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  installationLabourCost: decimal("installation_labour_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  travelCost: decimal("travel_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  adminCost: decimal("admin_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  supplierDeliveryFees: decimal("supplier_delivery_fees", { precision: 10, scale: 2 }).notNull().default("0"),
+  thirdPartyCost: decimal("third_party_cost", { precision: 10, scale: 2 }).notNull().default("0"), // welder, powder coater
+  groundConditionsCost: decimal("ground_conditions_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  
+  // Totals
+  totalCost: decimal("total_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  profitAmount: decimal("profit_amount", { precision: 10, scale: 2 }).notNull().default("0"),
+  profitMarginPercent: decimal("profit_margin_percent", { precision: 5, scale: 2 }).notNull().default("0"),
+  
+  // Metadata
+  isSupplyOnly: boolean("is_supply_only").default(false),
+  estimatedTripCount: integer("estimated_trip_count").default(1),
+  actualTripCount: integer("actual_trip_count").default(0),
+  totalManufacturingMinutes: integer("total_manufacturing_minutes").default(0),
+  totalInstallMinutes: integer("total_install_minutes").default(0),
+  totalAdminMinutes: integer("total_admin_minutes").default(0),
+  totalTravelMinutes: integer("total_travel_minutes").default(0),
+  
+  lastCalculatedAt: timestamp("last_calculated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
 // Campaign Enrollments table - track entities enrolled in campaigns
 export const campaignEnrollments = pgTable("campaign_enrollments", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -650,6 +859,45 @@ export const insertCampaignEnrollmentSchema = createInsertSchema(campaignEnrollm
   enrolledAt: true,
 });
 
+// P&L System Insert Schemas
+export const insertStaffRateCardSchema = createInsertSchema(staffRateCards).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertQuoteCostComponentSchema = createInsertSchema(quoteCostComponents).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertQuoteTripSchema = createInsertSchema(quoteTrips).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertQuoteAdminTimeSchema = createInsertSchema(quoteAdminTime).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertTravelSessionSchema = createInsertSchema(travelSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertQuoteGroundConditionSchema = createInsertSchema(quoteGroundConditions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertQuotePLSummarySchema = createInsertSchema(quotePLSummary).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastCalculatedAt: true,
+});
+
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -713,3 +961,25 @@ export type AutomationCampaign = typeof automationCampaigns.$inferSelect;
 
 export type InsertCampaignEnrollment = z.infer<typeof insertCampaignEnrollmentSchema>;
 export type CampaignEnrollment = typeof campaignEnrollments.$inferSelect;
+
+// P&L System Types
+export type InsertStaffRateCard = z.infer<typeof insertStaffRateCardSchema>;
+export type StaffRateCard = typeof staffRateCards.$inferSelect;
+
+export type InsertQuoteCostComponent = z.infer<typeof insertQuoteCostComponentSchema>;
+export type QuoteCostComponent = typeof quoteCostComponents.$inferSelect;
+
+export type InsertQuoteTrip = z.infer<typeof insertQuoteTripSchema>;
+export type QuoteTrip = typeof quoteTrips.$inferSelect;
+
+export type InsertQuoteAdminTime = z.infer<typeof insertQuoteAdminTimeSchema>;
+export type QuoteAdminTime = typeof quoteAdminTime.$inferSelect;
+
+export type InsertTravelSession = z.infer<typeof insertTravelSessionSchema>;
+export type TravelSession = typeof travelSessions.$inferSelect;
+
+export type InsertQuoteGroundCondition = z.infer<typeof insertQuoteGroundConditionSchema>;
+export type QuoteGroundCondition = typeof quoteGroundConditions.$inferSelect;
+
+export type InsertQuotePLSummary = z.infer<typeof insertQuotePLSummarySchema>;
+export type QuotePLSummary = typeof quotePLSummary.$inferSelect;

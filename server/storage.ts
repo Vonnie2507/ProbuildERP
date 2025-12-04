@@ -5,6 +5,8 @@ import {
   productionTasks, installTasks, scheduleEvents, payments, notifications,
   smsLogs, smsConversations, messageRanges, activityLogs, documents,
   quoteFollowUps, automationCampaigns, campaignEnrollments,
+  staffRateCards, quoteCostComponents, quoteTrips, quoteAdminTime,
+  travelSessions, quoteGroundConditions, quotePLSummary,
   type User, type InsertUser,
   type Client, type InsertClient,
   type Lead, type InsertLead,
@@ -26,6 +28,13 @@ import {
   type QuoteFollowUp, type InsertQuoteFollowUp,
   type AutomationCampaign, type InsertAutomationCampaign,
   type CampaignEnrollment, type InsertCampaignEnrollment,
+  type StaffRateCard, type InsertStaffRateCard,
+  type QuoteCostComponent, type InsertQuoteCostComponent,
+  type QuoteTrip, type InsertQuoteTrip,
+  type QuoteAdminTime, type InsertQuoteAdminTime,
+  type TravelSession, type InsertTravelSession,
+  type QuoteGroundCondition, type InsertQuoteGroundCondition,
+  type QuotePLSummary, type InsertQuotePLSummary,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -222,6 +231,67 @@ export interface IStorage {
   
   // Quote Analytics
   getQuoteAnalytics(): Promise<QuoteAnalytics>;
+
+  // ============================================
+  // PROFIT & LOSS COST TRACKING
+  // ============================================
+  
+  // Staff Rate Cards
+  getStaffRateCard(id: string): Promise<StaffRateCard | undefined>;
+  getStaffRateCards(): Promise<StaffRateCard[]>;
+  getStaffRateCardsByUser(userId: string): Promise<StaffRateCard[]>;
+  getActiveRateByType(userId: string, rateType: string): Promise<StaffRateCard | undefined>;
+  createStaffRateCard(rateCard: InsertStaffRateCard): Promise<StaffRateCard>;
+  updateStaffRateCard(id: string, rateCard: Partial<InsertStaffRateCard>): Promise<StaffRateCard | undefined>;
+  deleteStaffRateCard(id: string): Promise<boolean>;
+
+  // Quote Cost Components
+  getQuoteCostComponent(id: string): Promise<QuoteCostComponent | undefined>;
+  getQuoteCostComponentsByQuote(quoteId: string): Promise<QuoteCostComponent[]>;
+  getQuoteCostComponentsByJob(jobId: string): Promise<QuoteCostComponent[]>;
+  createQuoteCostComponent(component: InsertQuoteCostComponent): Promise<QuoteCostComponent>;
+  updateQuoteCostComponent(id: string, component: Partial<InsertQuoteCostComponent>): Promise<QuoteCostComponent | undefined>;
+  deleteQuoteCostComponent(id: string): Promise<boolean>;
+
+  // Quote Trips
+  getQuoteTrip(id: string): Promise<QuoteTrip | undefined>;
+  getQuoteTripsByQuote(quoteId: string): Promise<QuoteTrip[]>;
+  getQuoteTripsByJob(jobId: string): Promise<QuoteTrip[]>;
+  getQuoteTripsByStaff(staffId: string): Promise<QuoteTrip[]>;
+  createQuoteTrip(trip: InsertQuoteTrip): Promise<QuoteTrip>;
+  updateQuoteTrip(id: string, trip: Partial<InsertQuoteTrip>): Promise<QuoteTrip | undefined>;
+  deleteQuoteTrip(id: string): Promise<boolean>;
+
+  // Quote Admin Time
+  getQuoteAdminTime(id: string): Promise<QuoteAdminTime | undefined>;
+  getQuoteAdminTimeByQuote(quoteId: string): Promise<QuoteAdminTime[]>;
+  getQuoteAdminTimeByJob(jobId: string): Promise<QuoteAdminTime[]>;
+  getQuoteAdminTimeByStaff(staffId: string): Promise<QuoteAdminTime[]>;
+  createQuoteAdminTime(adminTime: InsertQuoteAdminTime): Promise<QuoteAdminTime>;
+  updateQuoteAdminTime(id: string, adminTime: Partial<InsertQuoteAdminTime>): Promise<QuoteAdminTime | undefined>;
+  deleteQuoteAdminTime(id: string): Promise<boolean>;
+
+  // Travel Sessions
+  getTravelSession(id: string): Promise<TravelSession | undefined>;
+  getTravelSessionsByTrip(tripId: string): Promise<TravelSession[]>;
+  getActiveTravelSessions(): Promise<TravelSession[]>;
+  createTravelSession(session: InsertTravelSession): Promise<TravelSession>;
+  updateTravelSession(id: string, session: Partial<InsertTravelSession>): Promise<TravelSession | undefined>;
+
+  // Quote Ground Conditions
+  getQuoteGroundCondition(id: string): Promise<QuoteGroundCondition | undefined>;
+  getQuoteGroundConditionsByQuote(quoteId: string): Promise<QuoteGroundCondition[]>;
+  createQuoteGroundCondition(condition: InsertQuoteGroundCondition): Promise<QuoteGroundCondition>;
+  updateQuoteGroundCondition(id: string, condition: Partial<InsertQuoteGroundCondition>): Promise<QuoteGroundCondition | undefined>;
+  deleteQuoteGroundCondition(id: string): Promise<boolean>;
+
+  // Quote P&L Summary
+  getQuotePLSummary(id: string): Promise<QuotePLSummary | undefined>;
+  getQuotePLSummaryByQuote(quoteId: string): Promise<QuotePLSummary | undefined>;
+  getQuotePLSummaryByJob(jobId: string): Promise<QuotePLSummary | undefined>;
+  createQuotePLSummary(summary: InsertQuotePLSummary): Promise<QuotePLSummary>;
+  updateQuotePLSummary(id: string, summary: Partial<InsertQuotePLSummary>): Promise<QuotePLSummary | undefined>;
+  recalculateQuotePLSummary(quoteId: string): Promise<QuotePLSummary | undefined>;
 }
 
 export interface DashboardStats {
@@ -1279,6 +1349,354 @@ export class DatabaseStorage implements IStorage {
       quotesByCreator,
       recentQuotes: allQuotes.slice(0, 10),
     };
+  }
+
+  // ============================================
+  // PROFIT & LOSS COST TRACKING IMPLEMENTATION
+  // ============================================
+
+  // Staff Rate Cards
+  async getStaffRateCard(id: string): Promise<StaffRateCard | undefined> {
+    const [card] = await db.select().from(staffRateCards).where(eq(staffRateCards.id, id));
+    return card;
+  }
+
+  async getStaffRateCards(): Promise<StaffRateCard[]> {
+    return db.select().from(staffRateCards).orderBy(desc(staffRateCards.createdAt));
+  }
+
+  async getStaffRateCardsByUser(userId: string): Promise<StaffRateCard[]> {
+    return db.select().from(staffRateCards)
+      .where(eq(staffRateCards.userId, userId))
+      .orderBy(desc(staffRateCards.effectiveFrom));
+  }
+
+  async getActiveRateByType(userId: string, rateType: string): Promise<StaffRateCard | undefined> {
+    const now = new Date();
+    const [rate] = await db.select().from(staffRateCards)
+      .where(and(
+        eq(staffRateCards.userId, userId),
+        eq(staffRateCards.rateType, rateType),
+        eq(staffRateCards.isActive, true),
+        lte(staffRateCards.effectiveFrom, now),
+        or(isNull(staffRateCards.effectiveUntil), gte(staffRateCards.effectiveUntil, now))
+      ))
+      .orderBy(desc(staffRateCards.effectiveFrom))
+      .limit(1);
+    return rate;
+  }
+
+  async createStaffRateCard(rateCard: InsertStaffRateCard): Promise<StaffRateCard> {
+    const [created] = await db.insert(staffRateCards).values(rateCard).returning();
+    return created;
+  }
+
+  async updateStaffRateCard(id: string, rateCard: Partial<InsertStaffRateCard>): Promise<StaffRateCard | undefined> {
+    const [updated] = await db.update(staffRateCards).set(rateCard).where(eq(staffRateCards.id, id)).returning();
+    return updated;
+  }
+
+  async deleteStaffRateCard(id: string): Promise<boolean> {
+    await db.delete(staffRateCards).where(eq(staffRateCards.id, id));
+    return true;
+  }
+
+  // Quote Cost Components
+  async getQuoteCostComponent(id: string): Promise<QuoteCostComponent | undefined> {
+    const [component] = await db.select().from(quoteCostComponents).where(eq(quoteCostComponents.id, id));
+    return component;
+  }
+
+  async getQuoteCostComponentsByQuote(quoteId: string): Promise<QuoteCostComponent[]> {
+    return db.select().from(quoteCostComponents)
+      .where(eq(quoteCostComponents.quoteId, quoteId))
+      .orderBy(quoteCostComponents.category, quoteCostComponents.createdAt);
+  }
+
+  async getQuoteCostComponentsByJob(jobId: string): Promise<QuoteCostComponent[]> {
+    return db.select().from(quoteCostComponents)
+      .where(eq(quoteCostComponents.jobId, jobId))
+      .orderBy(quoteCostComponents.category, quoteCostComponents.createdAt);
+  }
+
+  async createQuoteCostComponent(component: InsertQuoteCostComponent): Promise<QuoteCostComponent> {
+    const [created] = await db.insert(quoteCostComponents).values(component).returning();
+    return created;
+  }
+
+  async updateQuoteCostComponent(id: string, component: Partial<InsertQuoteCostComponent>): Promise<QuoteCostComponent | undefined> {
+    const [updated] = await db.update(quoteCostComponents)
+      .set({ ...component, updatedAt: new Date() })
+      .where(eq(quoteCostComponents.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteQuoteCostComponent(id: string): Promise<boolean> {
+    await db.delete(quoteCostComponents).where(eq(quoteCostComponents.id, id));
+    return true;
+  }
+
+  // Quote Trips
+  async getQuoteTrip(id: string): Promise<QuoteTrip | undefined> {
+    const [trip] = await db.select().from(quoteTrips).where(eq(quoteTrips.id, id));
+    return trip;
+  }
+
+  async getQuoteTripsByQuote(quoteId: string): Promise<QuoteTrip[]> {
+    return db.select().from(quoteTrips)
+      .where(eq(quoteTrips.quoteId, quoteId))
+      .orderBy(quoteTrips.scheduledDate, quoteTrips.createdAt);
+  }
+
+  async getQuoteTripsByJob(jobId: string): Promise<QuoteTrip[]> {
+    return db.select().from(quoteTrips)
+      .where(eq(quoteTrips.jobId, jobId))
+      .orderBy(quoteTrips.scheduledDate, quoteTrips.createdAt);
+  }
+
+  async getQuoteTripsByStaff(staffId: string): Promise<QuoteTrip[]> {
+    return db.select().from(quoteTrips)
+      .where(eq(quoteTrips.staffId, staffId))
+      .orderBy(desc(quoteTrips.scheduledDate));
+  }
+
+  async createQuoteTrip(trip: InsertQuoteTrip): Promise<QuoteTrip> {
+    const [created] = await db.insert(quoteTrips).values(trip).returning();
+    return created;
+  }
+
+  async updateQuoteTrip(id: string, trip: Partial<InsertQuoteTrip>): Promise<QuoteTrip | undefined> {
+    const [updated] = await db.update(quoteTrips).set(trip).where(eq(quoteTrips.id, id)).returning();
+    return updated;
+  }
+
+  async deleteQuoteTrip(id: string): Promise<boolean> {
+    await db.delete(quoteTrips).where(eq(quoteTrips.id, id));
+    return true;
+  }
+
+  // Quote Admin Time
+  async getQuoteAdminTime(id: string): Promise<QuoteAdminTime | undefined> {
+    const [adminTime] = await db.select().from(quoteAdminTime).where(eq(quoteAdminTime.id, id));
+    return adminTime;
+  }
+
+  async getQuoteAdminTimeByQuote(quoteId: string): Promise<QuoteAdminTime[]> {
+    return db.select().from(quoteAdminTime)
+      .where(eq(quoteAdminTime.quoteId, quoteId))
+      .orderBy(desc(quoteAdminTime.createdAt));
+  }
+
+  async getQuoteAdminTimeByJob(jobId: string): Promise<QuoteAdminTime[]> {
+    return db.select().from(quoteAdminTime)
+      .where(eq(quoteAdminTime.jobId, jobId))
+      .orderBy(desc(quoteAdminTime.createdAt));
+  }
+
+  async getQuoteAdminTimeByStaff(staffId: string): Promise<QuoteAdminTime[]> {
+    return db.select().from(quoteAdminTime)
+      .where(eq(quoteAdminTime.staffId, staffId))
+      .orderBy(desc(quoteAdminTime.createdAt));
+  }
+
+  async createQuoteAdminTime(adminTime: InsertQuoteAdminTime): Promise<QuoteAdminTime> {
+    const [created] = await db.insert(quoteAdminTime).values(adminTime).returning();
+    return created;
+  }
+
+  async updateQuoteAdminTime(id: string, adminTime: Partial<InsertQuoteAdminTime>): Promise<QuoteAdminTime | undefined> {
+    const [updated] = await db.update(quoteAdminTime).set(adminTime).where(eq(quoteAdminTime.id, id)).returning();
+    return updated;
+  }
+
+  async deleteQuoteAdminTime(id: string): Promise<boolean> {
+    await db.delete(quoteAdminTime).where(eq(quoteAdminTime.id, id));
+    return true;
+  }
+
+  // Travel Sessions
+  async getTravelSession(id: string): Promise<TravelSession | undefined> {
+    const [session] = await db.select().from(travelSessions).where(eq(travelSessions.id, id));
+    return session;
+  }
+
+  async getTravelSessionsByTrip(tripId: string): Promise<TravelSession[]> {
+    return db.select().from(travelSessions)
+      .where(eq(travelSessions.tripId, tripId))
+      .orderBy(desc(travelSessions.createdAt));
+  }
+
+  async getActiveTravelSessions(): Promise<TravelSession[]> {
+    return db.select().from(travelSessions)
+      .where(eq(travelSessions.status, 'in_transit'))
+      .orderBy(travelSessions.startedAt);
+  }
+
+  async createTravelSession(session: InsertTravelSession): Promise<TravelSession> {
+    const [created] = await db.insert(travelSessions).values(session).returning();
+    return created;
+  }
+
+  async updateTravelSession(id: string, session: Partial<InsertTravelSession>): Promise<TravelSession | undefined> {
+    const [updated] = await db.update(travelSessions).set(session).where(eq(travelSessions.id, id)).returning();
+    return updated;
+  }
+
+  // Quote Ground Conditions
+  async getQuoteGroundCondition(id: string): Promise<QuoteGroundCondition | undefined> {
+    const [condition] = await db.select().from(quoteGroundConditions).where(eq(quoteGroundConditions.id, id));
+    return condition;
+  }
+
+  async getQuoteGroundConditionsByQuote(quoteId: string): Promise<QuoteGroundCondition[]> {
+    return db.select().from(quoteGroundConditions)
+      .where(eq(quoteGroundConditions.quoteId, quoteId))
+      .orderBy(quoteGroundConditions.createdAt);
+  }
+
+  async createQuoteGroundCondition(condition: InsertQuoteGroundCondition): Promise<QuoteGroundCondition> {
+    const [created] = await db.insert(quoteGroundConditions).values(condition).returning();
+    return created;
+  }
+
+  async updateQuoteGroundCondition(id: string, condition: Partial<InsertQuoteGroundCondition>): Promise<QuoteGroundCondition | undefined> {
+    const [updated] = await db.update(quoteGroundConditions).set(condition).where(eq(quoteGroundConditions.id, id)).returning();
+    return updated;
+  }
+
+  async deleteQuoteGroundCondition(id: string): Promise<boolean> {
+    await db.delete(quoteGroundConditions).where(eq(quoteGroundConditions.id, id));
+    return true;
+  }
+
+  // Quote P&L Summary
+  async getQuotePLSummary(id: string): Promise<QuotePLSummary | undefined> {
+    const [summary] = await db.select().from(quotePLSummary).where(eq(quotePLSummary.id, id));
+    return summary;
+  }
+
+  async getQuotePLSummaryByQuote(quoteId: string): Promise<QuotePLSummary | undefined> {
+    const [summary] = await db.select().from(quotePLSummary).where(eq(quotePLSummary.quoteId, quoteId));
+    return summary;
+  }
+
+  async getQuotePLSummaryByJob(jobId: string): Promise<QuotePLSummary | undefined> {
+    const [summary] = await db.select().from(quotePLSummary).where(eq(quotePLSummary.jobId, jobId));
+    return summary;
+  }
+
+  async createQuotePLSummary(summary: InsertQuotePLSummary): Promise<QuotePLSummary> {
+    const [created] = await db.insert(quotePLSummary).values(summary).returning();
+    return created;
+  }
+
+  async updateQuotePLSummary(id: string, summary: Partial<InsertQuotePLSummary>): Promise<QuotePLSummary | undefined> {
+    const [updated] = await db.update(quotePLSummary)
+      .set({ ...summary, updatedAt: new Date(), lastCalculatedAt: new Date() })
+      .where(eq(quotePLSummary.id, id))
+      .returning();
+    return updated;
+  }
+
+  async recalculateQuotePLSummary(quoteId: string): Promise<QuotePLSummary | undefined> {
+    // Get the quote
+    const quote = await this.getQuote(quoteId);
+    if (!quote) return undefined;
+
+    // Get all cost components
+    const costComponents = await this.getQuoteCostComponentsByQuote(quoteId);
+    
+    // Get all trips
+    const trips = await this.getQuoteTripsByQuote(quoteId);
+    
+    // Get all admin time
+    const adminTimes = await this.getQuoteAdminTimeByQuote(quoteId);
+    
+    // Get ground conditions
+    const groundConditions = await this.getQuoteGroundConditionsByQuote(quoteId);
+
+    // Calculate costs by category
+    const materialsCost = costComponents
+      .filter(c => c.category === 'materials')
+      .reduce((sum, c) => sum + Number(c.totalCost || 0), 0);
+
+    const manufacturingLabourCost = costComponents
+      .filter(c => c.category === 'manufacturing_labour')
+      .reduce((sum, c) => sum + Number(c.totalCost || 0), 0);
+
+    const installationLabourCost = costComponents
+      .filter(c => c.category === 'install_labour')
+      .reduce((sum, c) => sum + Number(c.totalCost || 0), 0);
+
+    const supplierDeliveryFees = costComponents
+      .filter(c => c.category === 'supplier_fees')
+      .reduce((sum, c) => sum + Number(c.totalCost || 0), 0);
+
+    const thirdPartyCost = costComponents
+      .filter(c => c.category === 'third_party')
+      .reduce((sum, c) => sum + Number(c.totalCost || 0), 0);
+
+    // Calculate travel costs from trips
+    const travelCost = trips.reduce((sum, t) => sum + Number(t.travelCostTotal || 0), 0);
+    const totalTravelMinutes = trips.reduce((sum, t) => sum + (t.durationMinutes || 0), 0);
+
+    // Calculate admin costs
+    const adminCost = adminTimes.reduce((sum, a) => sum + Number(a.totalCost || 0), 0);
+    const totalAdminMinutes = adminTimes.reduce((sum, a) => sum + (a.durationMinutes || 0), 0);
+
+    // Calculate ground conditions costs
+    const groundConditionsCost = groundConditions.reduce((sum, g) => sum + Number(g.additionalCost || 0), 0);
+
+    // Total revenue is from the quote
+    const totalRevenue = Number(quote.totalAmount || 0);
+
+    // Calculate totals
+    const totalCost = materialsCost + manufacturingLabourCost + installationLabourCost + 
+                      travelCost + adminCost + supplierDeliveryFees + thirdPartyCost + groundConditionsCost;
+    
+    const profitAmount = totalRevenue - totalCost;
+    const profitMarginPercent = totalRevenue > 0 ? (profitAmount / totalRevenue) * 100 : 0;
+
+    // Manufacturing minutes from production cost components
+    const totalManufacturingMinutes = costComponents
+      .filter(c => c.category === 'manufacturing_labour')
+      .reduce((sum, c) => sum + Number(c.quantity || 0) * 60, 0); // Assuming quantity is hours
+
+    // Install minutes
+    const totalInstallMinutes = costComponents
+      .filter(c => c.category === 'install_labour')
+      .reduce((sum, c) => sum + Number(c.quantity || 0) * 60, 0);
+
+    const summaryData = {
+      quoteId,
+      totalRevenue: totalRevenue.toString(),
+      materialsCost: materialsCost.toString(),
+      manufacturingLabourCost: manufacturingLabourCost.toString(),
+      installationLabourCost: installationLabourCost.toString(),
+      travelCost: travelCost.toString(),
+      adminCost: adminCost.toString(),
+      supplierDeliveryFees: supplierDeliveryFees.toString(),
+      thirdPartyCost: thirdPartyCost.toString(),
+      groundConditionsCost: groundConditionsCost.toString(),
+      totalCost: totalCost.toString(),
+      profitAmount: profitAmount.toString(),
+      profitMarginPercent: profitMarginPercent.toFixed(2),
+      isSupplyOnly: !quote.labourEstimate || Number(quote.labourEstimate) === 0,
+      actualTripCount: trips.length,
+      totalManufacturingMinutes: Math.round(totalManufacturingMinutes),
+      totalInstallMinutes: Math.round(totalInstallMinutes),
+      totalAdminMinutes,
+      totalTravelMinutes,
+    };
+
+    // Check if summary exists, update or create
+    const existing = await this.getQuotePLSummaryByQuote(quoteId);
+    if (existing) {
+      return this.updateQuotePLSummary(existing.id, summaryData);
+    } else {
+      return this.createQuotePLSummary(summaryData);
+    }
   }
 }
 
