@@ -2215,5 +2215,476 @@ export async function registerRoutes(
     }
   });
 
+  // ============ PROFIT & LOSS COST TRACKING ============
+  // Staff-only endpoints for job costing analysis
+
+  // Staff Rate Cards
+  app.get("/api/staff-rate-cards", async (req, res) => {
+    try {
+      const rateCards = await storage.getStaffRateCards();
+      res.json(rateCards);
+    } catch (error) {
+      console.error("Error fetching rate cards:", error);
+      res.status(500).json({ error: "Failed to fetch rate cards" });
+    }
+  });
+
+  app.get("/api/staff-rate-cards/user/:userId", async (req, res) => {
+    try {
+      const rateCards = await storage.getStaffRateCardsByUser(req.params.userId);
+      res.json(rateCards);
+    } catch (error) {
+      console.error("Error fetching rate cards:", error);
+      res.status(500).json({ error: "Failed to fetch rate cards" });
+    }
+  });
+
+  app.get("/api/staff-rate-cards/:id", async (req, res) => {
+    try {
+      const rateCard = await storage.getStaffRateCard(req.params.id);
+      if (!rateCard) {
+        return res.status(404).json({ error: "Rate card not found" });
+      }
+      res.json(rateCard);
+    } catch (error) {
+      console.error("Error fetching rate card:", error);
+      res.status(500).json({ error: "Failed to fetch rate card" });
+    }
+  });
+
+  app.post("/api/staff-rate-cards", async (req, res) => {
+    try {
+      const data = {
+        ...req.body,
+        effectiveFrom: req.body.effectiveFrom ? new Date(req.body.effectiveFrom) : new Date(),
+        effectiveUntil: req.body.effectiveUntil ? new Date(req.body.effectiveUntil) : null,
+      };
+      const rateCard = await storage.createStaffRateCard(data);
+      res.status(201).json(rateCard);
+    } catch (error) {
+      console.error("Error creating rate card:", error);
+      res.status(500).json({ error: "Failed to create rate card" });
+    }
+  });
+
+  app.patch("/api/staff-rate-cards/:id", async (req, res) => {
+    try {
+      const data = { ...req.body };
+      if (data.effectiveFrom) data.effectiveFrom = new Date(data.effectiveFrom);
+      if (data.effectiveUntil) data.effectiveUntil = new Date(data.effectiveUntil);
+      const rateCard = await storage.updateStaffRateCard(req.params.id, data);
+      if (!rateCard) {
+        return res.status(404).json({ error: "Rate card not found" });
+      }
+      res.json(rateCard);
+    } catch (error) {
+      console.error("Error updating rate card:", error);
+      res.status(500).json({ error: "Failed to update rate card" });
+    }
+  });
+
+  app.delete("/api/staff-rate-cards/:id", async (req, res) => {
+    try {
+      await storage.deleteStaffRateCard(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting rate card:", error);
+      res.status(500).json({ error: "Failed to delete rate card" });
+    }
+  });
+
+  // Quote Cost Components
+  app.get("/api/quotes/:quoteId/costs", async (req, res) => {
+    try {
+      const components = await storage.getQuoteCostComponentsByQuote(req.params.quoteId);
+      res.json(components);
+    } catch (error) {
+      console.error("Error fetching cost components:", error);
+      res.status(500).json({ error: "Failed to fetch cost components" });
+    }
+  });
+
+  app.post("/api/quotes/:quoteId/costs", async (req, res) => {
+    try {
+      const component = await storage.createQuoteCostComponent({
+        ...req.body,
+        quoteId: req.params.quoteId,
+      });
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.status(201).json(component);
+    } catch (error) {
+      console.error("Error creating cost component:", error);
+      res.status(500).json({ error: "Failed to create cost component" });
+    }
+  });
+
+  app.patch("/api/quotes/:quoteId/costs/:id", async (req, res) => {
+    try {
+      const component = await storage.updateQuoteCostComponent(req.params.id, req.body);
+      if (!component) {
+        return res.status(404).json({ error: "Cost component not found" });
+      }
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json(component);
+    } catch (error) {
+      console.error("Error updating cost component:", error);
+      res.status(500).json({ error: "Failed to update cost component" });
+    }
+  });
+
+  app.delete("/api/quotes/:quoteId/costs/:id", async (req, res) => {
+    try {
+      await storage.deleteQuoteCostComponent(req.params.id);
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting cost component:", error);
+      res.status(500).json({ error: "Failed to delete cost component" });
+    }
+  });
+
+  // Quote Trips
+  app.get("/api/quotes/:quoteId/trips", async (req, res) => {
+    try {
+      const trips = await storage.getQuoteTripsByQuote(req.params.quoteId);
+      res.json(trips);
+    } catch (error) {
+      console.error("Error fetching trips:", error);
+      res.status(500).json({ error: "Failed to fetch trips" });
+    }
+  });
+
+  app.post("/api/quotes/:quoteId/trips", async (req, res) => {
+    try {
+      const trip = await storage.createQuoteTrip({
+        ...req.body,
+        quoteId: req.params.quoteId,
+        scheduledDate: req.body.scheduledDate ? new Date(req.body.scheduledDate) : null,
+      });
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.status(201).json(trip);
+    } catch (error) {
+      console.error("Error creating trip:", error);
+      res.status(500).json({ error: "Failed to create trip" });
+    }
+  });
+
+  app.patch("/api/quotes/:quoteId/trips/:id", async (req, res) => {
+    try {
+      const data = { ...req.body };
+      if (data.scheduledDate) data.scheduledDate = new Date(data.scheduledDate);
+      const trip = await storage.updateQuoteTrip(req.params.id, data);
+      if (!trip) {
+        return res.status(404).json({ error: "Trip not found" });
+      }
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json(trip);
+    } catch (error) {
+      console.error("Error updating trip:", error);
+      res.status(500).json({ error: "Failed to update trip" });
+    }
+  });
+
+  app.delete("/api/quotes/:quoteId/trips/:id", async (req, res) => {
+    try {
+      await storage.deleteQuoteTrip(req.params.id);
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting trip:", error);
+      res.status(500).json({ error: "Failed to delete trip" });
+    }
+  });
+
+  // Quote Admin Time
+  app.get("/api/quotes/:quoteId/admin-time", async (req, res) => {
+    try {
+      const adminTime = await storage.getQuoteAdminTimeByQuote(req.params.quoteId);
+      res.json(adminTime);
+    } catch (error) {
+      console.error("Error fetching admin time:", error);
+      res.status(500).json({ error: "Failed to fetch admin time" });
+    }
+  });
+
+  app.post("/api/quotes/:quoteId/admin-time", async (req, res) => {
+    try {
+      const adminTime = await storage.createQuoteAdminTime({
+        ...req.body,
+        quoteId: req.params.quoteId,
+      });
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.status(201).json(adminTime);
+    } catch (error) {
+      console.error("Error creating admin time:", error);
+      res.status(500).json({ error: "Failed to create admin time" });
+    }
+  });
+
+  app.patch("/api/quotes/:quoteId/admin-time/:id", async (req, res) => {
+    try {
+      const adminTime = await storage.updateQuoteAdminTime(req.params.id, req.body);
+      if (!adminTime) {
+        return res.status(404).json({ error: "Admin time not found" });
+      }
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json(adminTime);
+    } catch (error) {
+      console.error("Error updating admin time:", error);
+      res.status(500).json({ error: "Failed to update admin time" });
+    }
+  });
+
+  app.delete("/api/quotes/:quoteId/admin-time/:id", async (req, res) => {
+    try {
+      await storage.deleteQuoteAdminTime(req.params.id);
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting admin time:", error);
+      res.status(500).json({ error: "Failed to delete admin time" });
+    }
+  });
+
+  // Travel Sessions (for real-time tracking)
+  app.get("/api/trips/:tripId/travel-sessions", async (req, res) => {
+    try {
+      const sessions = await storage.getTravelSessionsByTrip(req.params.tripId);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Error fetching travel sessions:", error);
+      res.status(500).json({ error: "Failed to fetch travel sessions" });
+    }
+  });
+
+  app.get("/api/travel-sessions/active", async (req, res) => {
+    try {
+      const sessions = await storage.getActiveTravelSessions();
+      res.json(sessions);
+    } catch (error) {
+      console.error("Error fetching active sessions:", error);
+      res.status(500).json({ error: "Failed to fetch active sessions" });
+    }
+  });
+
+  app.post("/api/trips/:tripId/travel-sessions/start", async (req, res) => {
+    try {
+      const session = await storage.createTravelSession({
+        tripId: req.params.tripId,
+        staffId: req.body.staffId,
+        clientId: req.body.clientId,
+        startLatitude: req.body.startLatitude,
+        startLongitude: req.body.startLongitude,
+        startedAt: new Date(),
+        status: 'in_transit',
+        estimatedArrivalTime: req.body.estimatedArrivalTime ? new Date(req.body.estimatedArrivalTime) : null,
+      });
+      
+      // Optional: Send SMS notification to client
+      if (req.body.notifyClient && req.body.clientPhone) {
+        const twilio = await getTwilioClient();
+        if (twilio) {
+          try {
+            const fromPhone = await getTwilioFromPhoneNumber();
+            await twilio.messages.create({
+              body: `Probuild PVC: Our team is now on their way to your site. Estimated arrival time: ${req.body.etaMinutes || 30} minutes.`,
+              from: fromPhone || '',
+              to: req.body.clientPhone,
+            });
+            // Update session with notification info
+            await storage.updateTravelSession(session.id, {
+              clientNotificationSent: true,
+              clientNotificationSentAt: new Date(),
+            });
+          } catch (smsError) {
+            console.error("Failed to send travel notification SMS:", smsError);
+          }
+        }
+      }
+      
+      res.status(201).json(session);
+    } catch (error) {
+      console.error("Error starting travel session:", error);
+      res.status(500).json({ error: "Failed to start travel session" });
+    }
+  });
+
+  app.patch("/api/travel-sessions/:id/arrive", async (req, res) => {
+    try {
+      const session = await storage.updateTravelSession(req.params.id, {
+        endLatitude: req.body.endLatitude,
+        endLongitude: req.body.endLongitude,
+        actualArrivalTime: new Date(),
+        status: 'arrived',
+        completedAt: new Date(),
+      });
+      
+      if (!session) {
+        return res.status(404).json({ error: "Travel session not found" });
+      }
+      
+      // Update trip totals if duration/distance provided
+      if (session.tripId && (req.body.durationMinutes || req.body.distanceKm)) {
+        const trip = await storage.getQuoteTrip(session.tripId);
+        if (trip) {
+          await storage.updateQuoteTrip(session.tripId, {
+            durationMinutes: req.body.durationMinutes || trip.durationMinutes,
+            distanceKm: req.body.distanceKm?.toString() || trip.distanceKm,
+          });
+          
+          // Recalculate P&L if we have a quoteId
+          if (trip.quoteId) {
+            await storage.recalculateQuotePLSummary(trip.quoteId);
+          }
+        }
+      }
+      
+      res.json(session);
+    } catch (error) {
+      console.error("Error completing travel session:", error);
+      res.status(500).json({ error: "Failed to complete travel session" });
+    }
+  });
+
+  // Quote Ground Conditions
+  app.get("/api/quotes/:quoteId/ground-conditions", async (req, res) => {
+    try {
+      const conditions = await storage.getQuoteGroundConditionsByQuote(req.params.quoteId);
+      res.json(conditions);
+    } catch (error) {
+      console.error("Error fetching ground conditions:", error);
+      res.status(500).json({ error: "Failed to fetch ground conditions" });
+    }
+  });
+
+  app.post("/api/quotes/:quoteId/ground-conditions", async (req, res) => {
+    try {
+      const condition = await storage.createQuoteGroundCondition({
+        ...req.body,
+        quoteId: req.params.quoteId,
+      });
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.status(201).json(condition);
+    } catch (error) {
+      console.error("Error creating ground condition:", error);
+      res.status(500).json({ error: "Failed to create ground condition" });
+    }
+  });
+
+  app.patch("/api/quotes/:quoteId/ground-conditions/:id", async (req, res) => {
+    try {
+      const condition = await storage.updateQuoteGroundCondition(req.params.id, req.body);
+      if (!condition) {
+        return res.status(404).json({ error: "Ground condition not found" });
+      }
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json(condition);
+    } catch (error) {
+      console.error("Error updating ground condition:", error);
+      res.status(500).json({ error: "Failed to update ground condition" });
+    }
+  });
+
+  app.delete("/api/quotes/:quoteId/ground-conditions/:id", async (req, res) => {
+    try {
+      await storage.deleteQuoteGroundCondition(req.params.id);
+      // Recalculate summary
+      await storage.recalculateQuotePLSummary(req.params.quoteId);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting ground condition:", error);
+      res.status(500).json({ error: "Failed to delete ground condition" });
+    }
+  });
+
+  // Quote P&L Summary
+  app.get("/api/quotes/:quoteId/pl-summary", async (req, res) => {
+    try {
+      let summary = await storage.getQuotePLSummaryByQuote(req.params.quoteId);
+      
+      // If no summary exists, calculate it
+      if (!summary) {
+        summary = await storage.recalculateQuotePLSummary(req.params.quoteId);
+      }
+      
+      if (!summary) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching P&L summary:", error);
+      res.status(500).json({ error: "Failed to fetch P&L summary" });
+    }
+  });
+
+  app.post("/api/quotes/:quoteId/pl-summary/recalculate", async (req, res) => {
+    try {
+      const summary = await storage.recalculateQuotePLSummary(req.params.quoteId);
+      if (!summary) {
+        return res.status(404).json({ error: "Quote not found" });
+      }
+      res.json(summary);
+    } catch (error) {
+      console.error("Error recalculating P&L:", error);
+      res.status(500).json({ error: "Failed to recalculate P&L" });
+    }
+  });
+
+  // Job-based P&L (for completed jobs)
+  app.get("/api/jobs/:jobId/costs", async (req, res) => {
+    try {
+      const components = await storage.getQuoteCostComponentsByJob(req.params.jobId);
+      res.json(components);
+    } catch (error) {
+      console.error("Error fetching job costs:", error);
+      res.status(500).json({ error: "Failed to fetch job costs" });
+    }
+  });
+
+  app.get("/api/jobs/:jobId/trips", async (req, res) => {
+    try {
+      const trips = await storage.getQuoteTripsByJob(req.params.jobId);
+      res.json(trips);
+    } catch (error) {
+      console.error("Error fetching job trips:", error);
+      res.status(500).json({ error: "Failed to fetch job trips" });
+    }
+  });
+
+  app.get("/api/jobs/:jobId/admin-time", async (req, res) => {
+    try {
+      const adminTime = await storage.getQuoteAdminTimeByJob(req.params.jobId);
+      res.json(adminTime);
+    } catch (error) {
+      console.error("Error fetching job admin time:", error);
+      res.status(500).json({ error: "Failed to fetch job admin time" });
+    }
+  });
+
+  app.get("/api/jobs/:jobId/pl-summary", async (req, res) => {
+    try {
+      const summary = await storage.getQuotePLSummaryByJob(req.params.jobId);
+      if (!summary) {
+        return res.status(404).json({ error: "P&L summary not found for this job" });
+      }
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching job P&L summary:", error);
+      res.status(500).json({ error: "Failed to fetch job P&L summary" });
+    }
+  });
+
   return httpServer;
 }
