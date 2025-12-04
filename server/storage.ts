@@ -1,4 +1,4 @@
-import { eq, desc, and, gte, lte, like, or, sql, isNull, isNotNull, ne } from "drizzle-orm";
+import { eq, desc, and, gte, lte, like, ilike, or, sql, isNull, isNotNull, ne } from "drizzle-orm";
 import { db } from "./db";
 import {
   users, clients, leads, fenceStyles, products, quotes, jobs, bom,
@@ -550,10 +550,10 @@ export class DatabaseStorage implements IStorage {
   async searchClients(query: string): Promise<Client[]> {
     return db.select().from(clients).where(
       or(
-        like(clients.name, `%${query}%`),
-        like(clients.email, `%${query}%`),
-        like(clients.phone, `%${query}%`),
-        like(clients.address, `%${query}%`)
+        ilike(clients.name, `%${query}%`),
+        ilike(clients.email, `%${query}%`),
+        ilike(clients.phone, `%${query}%`),
+        ilike(clients.address, `%${query}%`)
       )
     );
   }
@@ -609,9 +609,10 @@ export class DatabaseStorage implements IStorage {
   async searchLeads(query: string): Promise<Lead[]> {
     return db.select().from(leads).where(
       or(
-        like(leads.description, `%${query}%`),
-        like(leads.siteAddress, `%${query}%`),
-        like(leads.fenceStyle, `%${query}%`)
+        ilike(leads.leadNumber, `%${query}%`),
+        ilike(leads.description, `%${query}%`),
+        ilike(leads.siteAddress, `%${query}%`),
+        ilike(leads.fenceStyle, `%${query}%`)
       )
     );
   }
@@ -980,8 +981,8 @@ export class DatabaseStorage implements IStorage {
   async searchQuotes(query: string): Promise<Quote[]> {
     return db.select().from(quotes).where(
       or(
-        like(quotes.quoteNumber, `%${query}%`),
-        like(quotes.siteAddress, `%${query}%`)
+        ilike(quotes.quoteNumber, `%${query}%`),
+        ilike(quotes.siteAddress, `%${query}%`)
       )
     );
   }
@@ -1081,9 +1082,9 @@ export class DatabaseStorage implements IStorage {
   async searchJobs(query: string): Promise<Job[]> {
     return db.select().from(jobs).where(
       or(
-        like(jobs.jobNumber, `%${query}%`),
-        like(jobs.siteAddress, `%${query}%`),
-        like(jobs.fenceStyle, `%${query}%`)
+        ilike(jobs.jobNumber, `%${query}%`),
+        ilike(jobs.siteAddress, `%${query}%`),
+        ilike(jobs.fenceStyle, `%${query}%`)
       )
     );
   }
