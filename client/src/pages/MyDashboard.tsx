@@ -16,6 +16,12 @@ import {
 import type { LeadTask, Notification, StaffLeaveBalance } from "@shared/schema";
 import { formatDistanceToNow, isToday, isBefore, addDays, format } from "date-fns";
 
+interface KpiItem {
+  label: string;
+  value: string | number;
+  trend?: string;
+}
+
 interface DashboardData {
   user: {
     id: string;
@@ -28,6 +34,7 @@ interface DashboardData {
   tasks: LeadTask[];
   notifications: Notification[];
   leaveBalance: StaffLeaveBalance | { annualLeaveBalanceHours: string; sickLeaveBalanceHours: string };
+  kpis: KpiItem[];
 }
 
 function getGreeting(): string {
@@ -426,51 +433,7 @@ function NotificationsWidget({ notifications }: { notifications: Notification[] 
   );
 }
 
-function KPIsWidget({ role }: { role: string }) {
-  const { data: kpis, isLoading } = useQuery<Record<string, { label: string; value: number | string; period: string }[]>>({
-    queryKey: ["/api/my-dashboard/kpis", role],
-    retry: false,
-  });
-
-  const getKPIsForRole = (role: string) => {
-    const defaultKPIs = {
-      admin: [
-        { label: "Active Jobs", value: 12, period: "Current" },
-        { label: "Revenue This Month", value: "$45,200", period: "This month" },
-        { label: "New Leads", value: 8, period: "This week" },
-      ],
-      sales: [
-        { label: "Quotes Sent", value: 15, period: "This week" },
-        { label: "Conversion Rate", value: "32%", period: "This month" },
-        { label: "Follow-ups Due", value: 5, period: "Today" },
-      ],
-      scheduler: [
-        { label: "Jobs Scheduled", value: 8, period: "This week" },
-        { label: "Pending Setup", value: 3, period: "Current" },
-        { label: "Install Team Capacity", value: "75%", period: "This week" },
-      ],
-      production_manager: [
-        { label: "In Production", value: 6, period: "Current" },
-        { label: "Due This Week", value: 4, period: "This week" },
-        { label: "QA Pass Rate", value: "94%", period: "This month" },
-      ],
-      warehouse: [
-        { label: "Stock Alerts", value: 3, period: "Current" },
-        { label: "Orders Pending", value: 7, period: "Current" },
-        { label: "Deliveries Today", value: 2, period: "Today" },
-      ],
-      installer: [
-        { label: "Jobs Today", value: 2, period: "Today" },
-        { label: "Jobs Tomorrow", value: 1, period: "Tomorrow" },
-        { label: "Pending Checklists", value: 1, period: "Current" },
-      ],
-    };
-
-    return kpis?.[role] || defaultKPIs[role as keyof typeof defaultKPIs] || defaultKPIs.admin;
-  };
-
-  const roleKPIs = getKPIsForRole(role);
-
+function KPIsWidget({ kpis }: { kpis: KpiItem[] }) {
   return (
     <Card data-testid="widget-kpis">
       <CardHeader className="pb-2">
@@ -478,32 +441,26 @@ function KPIsWidget({ role }: { role: string }) {
           <TrendingUp className="h-4 w-4" />
           My Performance
         </CardTitle>
-        <CardDescription>{formatRoleDisplay(role)} KPIs</CardDescription>
+        <CardDescription>Role-based metrics</CardDescription>
       </CardHeader>
       <CardContent>
-        {isLoading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-            <Skeleton className="h-16 w-full" />
-          </div>
-        ) : (
-          <div className="grid gap-3">
-            {roleKPIs.map((kpi, index) => (
-              <div
-                key={index}
-                className="flex items-center justify-between p-3 rounded-lg border bg-card"
-                data-testid={`kpi-item-${index}`}
-              >
-                <div>
-                  <p className="text-sm text-muted-foreground">{kpi.label}</p>
-                  <p className="text-xs text-muted-foreground">{kpi.period}</p>
-                </div>
-                <p className="text-2xl font-bold">{kpi.value}</p>
+        <div className="grid gap-3">
+          {kpis.map((kpi, index) => (
+            <div
+              key={index}
+              className="flex items-center justify-between p-3 rounded-lg border bg-card"
+              data-testid={`kpi-item-${index}`}
+            >
+              <div>
+                <p className="text-sm font-medium">{kpi.label}</p>
+                {kpi.trend && (
+                  <p className="text-xs text-green-600">{kpi.trend}</p>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+              <p className="text-2xl font-bold">{kpi.value}</p>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
@@ -548,6 +505,7 @@ export default function MyDashboard() {
   const tasks = dashboardData?.tasks || [];
   const notifications = dashboardData?.notifications || [];
   const leaveBalance = dashboardData?.leaveBalance || { annualLeaveBalanceHours: "0", sickLeaveBalanceHours: "0" };
+  const kpis = dashboardData?.kpis || [];
 
   return (
     <div className="p-6 space-y-6" data-testid="page-my-dashboard">
@@ -577,7 +535,7 @@ export default function MyDashboard() {
           <NotificationsWidget notifications={notifications} />
         </div>
         <div className="space-y-6">
-          <KPIsWidget role={displayUser?.role || "sales"} />
+          <KPIsWidget kpis={kpis} />
           <WeatherWidget />
           <LeaveBalanceWidget leaveBalance={leaveBalance} />
         </div>

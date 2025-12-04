@@ -128,10 +128,11 @@ export async function registerRoutes(
         return res.status(401).json({ error: "User not found" });
       }
       
-      const [myTasks, myNotifications, leaveBalance] = await Promise.all([
+      const [myTasks, myNotifications, leaveBalance, roleKpis] = await Promise.all([
         storage.getTasksAssignedToUser(userId),
         storage.getNotificationsByUser(userId),
         storage.getStaffLeaveBalance(userId),
+        storage.getRoleBasedKpis(user.role, userId),
       ]);
       
       res.json({
@@ -149,6 +150,7 @@ export async function registerRoutes(
           annualLeaveBalanceHours: "0", 
           sickLeaveBalanceHours: "0" 
         },
+        kpis: roleKpis,
       });
     } catch (error) {
       console.error("Error fetching personal dashboard:", error);
