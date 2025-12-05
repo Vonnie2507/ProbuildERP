@@ -87,7 +87,8 @@ function StreetViewPreview({ address }: { address: string }) {
   }
 
   const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x120&location=${encodeURIComponent(address)}&key=${apiKey}`;
-  const googleMapsUrl = `https://www.google.com/maps?q=${encodeURIComponent(address)}&layer=c`;
+  // Open satellite view which always has imagery, with option to switch to Street View if available
+  const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}&basemap=satellite`;
 
   return (
     <div className="mt-2 rounded-md overflow-hidden border bg-muted/30">
@@ -135,9 +136,9 @@ function StreetViewPreview({ address }: { address: string }) {
           rel="noopener noreferrer"
           className="text-primary hover:underline"
         >
-          Open in Maps
+          View in Google Maps
         </a>
-        <span>Google Street View</span>
+        <span>Site Preview</span>
       </div>
     </div>
   );
