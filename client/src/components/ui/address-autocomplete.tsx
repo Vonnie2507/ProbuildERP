@@ -1,14 +1,28 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Input } from "@/components/ui/input";
-import { Loader2, MapPin, ImageOff } from "lucide-react";
+import { Loader2, MapPin, ImageOff, Mountain, AlertTriangle, CheckCircle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 interface AddressAutocompleteProps {
   value: string;
   onChange: (value: string) => void;
+  onCoordinatesChange?: (coords: { lat: number; lng: number } | null) => void;
   placeholder?: string;
   className?: string;
   showStreetView?: boolean;
   "data-testid"?: string;
+}
+
+interface SoilData {
+  soilType: string;
+  region: string | null;
+  nearestTown: string | null;
+  naturalVegetation: string | null;
+  state: string | null;
+  ascOrder: string | null;
+  comments: string | null;
+  installationNotes: string | null;
+  source: string;
 }
 
 interface Prediction {
@@ -144,9 +158,79 @@ function StreetViewPreview({ address }: { address: string }) {
   );
 }
 
+function SoilDataDisplay({ lat, lng }: { lat: number; lng: number }) {
+  const { data: soilData, isLoading, error } = useQuery<SoilData>({
+    queryKey: ["/api/soil-data", lat, lng],
+    queryFn: async () => {
+      const response = await fetch(`/api/soil-data?lat=${lat}&lng=${lng}`);
+      if (!response.ok) throw new Error("Failed to fetch soil data");
+      return response.json();
+    },
+    enabled: !isNaN(lat) && !isNaN(lng),
+    staleTime: 1000 * 60 * 60, // Cache for 1 hour
+    retry: 1,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="mt-2 rounded-md border bg-muted/30 p-2 flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span>Loading soil data...</span>
+      </div>
+    );
+  }
+
+  if (error || !soilData) {
+    return null;
+  }
+
+  // Determine the icon and color based on installation difficulty
+  const getInstallIcon = () => {
+    if (!soilData.installationNotes) return null;
+    const notes = soilData.installationNotes.toLowerCase();
+    if (notes.includes("easy") || notes.includes("standard")) {
+      return <CheckCircle className="h-4 w-4 text-green-600" />;
+    } else if (notes.includes("harder") || notes.includes("core drill")) {
+      return <AlertTriangle className="h-4 w-4 text-amber-500" />;
+    }
+    return <Mountain className="h-4 w-4 text-muted-foreground" />;
+  };
+
+  return (
+    <div className="mt-2 rounded-md border bg-muted/30" data-testid="soil-data-display">
+      <div className="px-3 py-2 border-b bg-muted/50 flex items-center gap-2">
+        <Mountain className="h-4 w-4 text-primary" />
+        <span className="text-sm font-medium">Soil Information</span>
+      </div>
+      <div className="p-3 space-y-2 text-sm">
+        <div className="flex items-center justify-between">
+          <span className="text-muted-foreground">Soil Type:</span>
+          <span className="font-medium" data-testid="soil-type">{soilData.soilType}</span>
+        </div>
+        {soilData.region && (
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Region:</span>
+            <span className="text-right">{soilData.region}</span>
+          </div>
+        )}
+        {soilData.installationNotes && (
+          <div className="mt-2 pt-2 border-t flex items-start gap-2">
+            {getInstallIcon()}
+            <span className="text-xs" data-testid="installation-notes">{soilData.installationNotes}</span>
+          </div>
+        )}
+      </div>
+      <div className="px-2 py-1 text-[10px] text-muted-foreground border-t text-right">
+        Source: {soilData.source}
+      </div>
+    </div>
+  );
+}
+
 export function AddressAutocomplete({
   value,
   onChange,
+  onCoordinatesChange,
   placeholder = "Enter address...",
   className,
   showStreetView = false,
@@ -158,6 +242,7 @@ export function AddressAutocomplete({
   const [showDropdown, setShowDropdown] = useState(false);
   const [isApiAvailable, setIsApiAvailable] = useState(false);
   const [confirmedAddress, setConfirmedAddress] = useState(value);
+  const [coordinates, setCoordinates] = useState<{ lat: number; lng: number } | null>(null);
   const autocompleteService = useRef<google.maps.places.AutocompleteService | null>(null);
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
@@ -167,6 +252,23 @@ export function AddressAutocomplete({
     setInputValue(value);
     if (value && value.length >= 10) {
       setConfirmedAddress(value);
+      // If we have an address but no coordinates, geocode it
+      if (!coordinates && window.google?.maps?.Geocoder) {
+        const geocoder = new window.google.maps.Geocoder();
+        geocoder.geocode({ address: value }, (
+          results: google.maps.GeocoderResult[] | null, 
+          status: google.maps.GeocoderStatus
+        ) => {
+          if (status === window.google!.maps.GeocoderStatus.OK && results?.[0]?.geometry?.location) {
+            const newCoords = {
+              lat: results[0].geometry.location.lat(),
+              lng: results[0].geometry.location.lng(),
+            };
+            setCoordinates(newCoords);
+            onCoordinatesChange?.(newCoords);
+          }
+        });
+      }
     }
   }, [value]);
 
@@ -252,13 +354,23 @@ export function AddressAutocomplete({
     placesService.current.getDetails(
       {
         placeId: prediction.place_id,
-        fields: ["formatted_address"],
+        fields: ["formatted_address", "geometry"],
       },
       (place, status) => {
         if (status === google.maps.places.PlacesServiceStatus.OK && place?.formatted_address) {
           setInputValue(place.formatted_address);
           onChange(place.formatted_address);
           setConfirmedAddress(place.formatted_address);
+          
+          // Extract coordinates for soil data lookup
+          if (place.geometry?.location) {
+            const newCoords = {
+              lat: place.geometry.location.lat(),
+              lng: place.geometry.location.lng(),
+            };
+            setCoordinates(newCoords);
+            onCoordinatesChange?.(newCoords);
+          }
         } else {
           setInputValue(prediction.description);
           onChange(prediction.description);
@@ -321,7 +433,12 @@ export function AddressAutocomplete({
       )}
 
       {showStreetView && confirmedAddress && (
-        <StreetViewPreview address={confirmedAddress} />
+        <>
+          <StreetViewPreview address={confirmedAddress} />
+          {coordinates && (
+            <SoilDataDisplay lat={coordinates.lat} lng={coordinates.lng} />
+          )}
+        </>
       )}
     </div>
   );
