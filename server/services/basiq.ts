@@ -91,8 +91,11 @@ export class BasiqService {
     ) || null;
   }
 
-  async createUser(email: string, mobile?: string): Promise<any> {
-    const body: any = { email };
+  async createUser(email: string, mobile?: string, businessName?: string): Promise<any> {
+    const body: any = { 
+      email,
+      businessName: businessName || "Probuild PVC"
+    };
     if (mobile) {
       body.mobile = mobile;
     }
