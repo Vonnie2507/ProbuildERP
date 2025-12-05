@@ -99,6 +99,7 @@ export class BasiqService {
       BusinessIdNo: abn || process.env.PROBUILD_ABN,
       BusinessIdNoType: "ABN",
       CountryCode: "AUS",
+      VerificationStatus: "verified",
       // Business address is required
       BusinessAddress: {
         addressLine1: process.env.PROBUILD_ADDRESS_LINE1 || "Perth",
