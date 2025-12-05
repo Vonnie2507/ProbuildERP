@@ -312,8 +312,20 @@ export async function registerRoutes(
         if (attempt < 2) await new Promise(r => setTimeout(r, 100 * (attempt + 1)));
       }
       
+      // Return fallback if ASRIS unavailable
       if (!response?.ok) {
-        throw lastError || new Error("Failed to fetch soil data from ASRIS");
+        console.warn("ASRIS API unavailable:", lastError?.message);
+        return res.json({
+          soilType: null,
+          region: null,
+          nearestTown: null,
+          naturalVegetation: null,
+          state: null,
+          ascOrder: null,
+          comments: null,
+          installationNotes: null,
+          source: "unavailable",
+        });
       }
       
       const xmlText = await response.text();
@@ -332,25 +344,39 @@ export async function registerRoutes(
       const ascOrder = extractValue("ASCOrder");
       const comments = extractValue("Comments");
       
+      // If no soil type found in XML, return unavailable
+      if (!soilType) {
+        console.warn("ASRIS returned empty soil data for coordinates:", latitude, longitude);
+        return res.json({
+          soilType: null,
+          region: null,
+          nearestTown: null,
+          naturalVegetation: null,
+          state: null,
+          ascOrder: null,
+          comments: null,
+          installationNotes: null,
+          source: "unavailable",
+        });
+      }
+      
       // Determine installation difficulty based on soil type
       let installationNotes = "";
-      if (soilType) {
-        const soilLower = soilType.toLowerCase();
-        if (soilLower.includes("sand") || soilLower.includes("loamy sand")) {
-          installationNotes = "Easy digging - standard auger should work well";
-        } else if (soilLower.includes("loam")) {
-          installationNotes = "Moderate digging - standard equipment suitable";
-        } else if (soilLower.includes("clay")) {
-          installationNotes = "Harder digging - may require more time/effort";
-        } else if (soilLower.includes("rock") || soilLower.includes("limestone")) {
-          installationNotes = "Core drill likely required";
-        } else if (soilLower.includes("gravel")) {
-          installationNotes = "Mixed conditions - check site for rock presence";
-        }
+      const soilLower = soilType.toLowerCase();
+      if (soilLower.includes("sand") || soilLower.includes("loamy sand")) {
+        installationNotes = "Easy digging - standard auger should work well";
+      } else if (soilLower.includes("loam")) {
+        installationNotes = "Moderate digging - standard equipment suitable";
+      } else if (soilLower.includes("clay")) {
+        installationNotes = "Harder digging - may require more time/effort";
+      } else if (soilLower.includes("rock") || soilLower.includes("limestone")) {
+        installationNotes = "Core drill likely required";
+      } else if (soilLower.includes("gravel")) {
+        installationNotes = "Mixed conditions - check site for rock presence";
       }
       
       res.json({
-        soilType: soilType || "Unknown",
+        soilType,
         region: region || null,
         nearestTown: nearestTown || null,
         naturalVegetation: naturalVegetation || null,
@@ -362,7 +388,18 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error fetching soil data:", error);
-      res.status(500).json({ error: "Failed to fetch soil data" });
+      // Return graceful fallback instead of 500
+      res.json({
+        soilType: null,
+        region: null,
+        nearestTown: null,
+        naturalVegetation: null,
+        state: null,
+        ascOrder: null,
+        comments: null,
+        installationNotes: null,
+        source: "unavailable",
+      });
     }
   });
 

@@ -86,7 +86,7 @@ function loadGoogleMapsScript(): Promise<void> {
   });
 }
 
-function StreetViewPreview({ address }: { address: string }) {
+export function SitePreview({ address }: { address: string }) {
   const [hasError, setHasError] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -180,7 +180,7 @@ function SoilDataDisplay({ lat, lng }: { lat: number; lng: number }) {
     );
   }
 
-  if (error || !soilData) {
+  if (error || !soilData || soilData.source === "unavailable" || !soilData.soilType) {
     return (
       <div className="mt-2 rounded-md border bg-muted/30 p-2" data-testid="soil-data-display">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -479,7 +479,7 @@ export function AddressAutocomplete({
 
       {showStreetView && confirmedAddress && (
         <>
-          <StreetViewPreview address={confirmedAddress} />
+          <SitePreview address={confirmedAddress} />
           {coordinates && (
             <SoilDataDisplay lat={coordinates.lat} lng={coordinates.lng} />
           )}

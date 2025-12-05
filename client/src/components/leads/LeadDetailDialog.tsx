@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/select";
 import { JobSetupDocument } from "@/components/jobs/JobSetupDocument";
 import { CallLogEntry } from "./CallLogEntry";
+import { SitePreview } from "@/components/ui/address-autocomplete";
 import type { Lead, Client, Quote, LeadActivity, LeadTask, User as UserType, LiveDocumentTemplate, JobSetupDocument as JobSetupDocumentType } from "@shared/schema";
 
 interface LeadDetailDialogProps {
@@ -419,10 +420,13 @@ export function LeadDetailDialog({
                     </div>
                   )}
                   {lead.siteAddress && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <MapPin className="h-4 w-4" />
-                      {lead.siteAddress}
-                    </div>
+                    <>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <MapPin className="h-4 w-4" />
+                        {lead.siteAddress}
+                      </div>
+                      <SitePreview address={lead.siteAddress} />
+                    </>
                   )}
                 </CardContent>
               </Card>
