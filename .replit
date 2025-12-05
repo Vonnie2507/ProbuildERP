@@ -81,3 +81,4 @@ integrations = ["stripe:1.0.0", "javascript_log_in_with_replit:1.0.0", "twilio:1
 
 [userenv.shared]
 PROBUILD_ABN = "29688327479"
+BASIQ_CONTACT_EMAIL = "vonnie@probuildpvc.com.au"

@@ -120,13 +120,22 @@ export class BasiqService {
 
   /**
    * Create a Basiq user (required before consent)
+   * Requires at least email or mobile to be provided or in environment
    */
   async createUser(email?: string, mobile?: string): Promise<string> {
     console.log("Creating Basiq user");
     
+    // Use provided values or fall back to environment variables
+    const contactEmail = email || process.env.BASIQ_CONTACT_EMAIL;
+    const contactMobile = mobile || process.env.BASIQ_CONTACT_MOBILE;
+    
+    if (!contactEmail && !contactMobile) {
+      throw new Error("Basiq user creation requires either email or mobile. Set BASIQ_CONTACT_EMAIL or BASIQ_CONTACT_MOBILE environment variables.");
+    }
+    
     const userData: any = {};
-    if (email) userData.email = email;
-    if (mobile) userData.mobile = mobile;
+    if (contactEmail) userData.email = contactEmail;
+    if (contactMobile) userData.mobile = contactMobile;
     
     const user = await this.makeRequest("/users", {
       method: "POST",
