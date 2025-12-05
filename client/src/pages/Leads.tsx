@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AddressAutocomplete } from "@/components/ui/address-autocomplete";
 import { KanbanBoard } from "@/components/leads/KanbanBoard";
 import { QuoteBuilder } from "@/components/quotes/QuoteBuilder";
 import {
@@ -650,15 +651,14 @@ export default function Leads() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="address">Site Address</Label>
-                <Input 
-                  id="address" 
-                  placeholder="Enter site address" 
+                <AddressAutocomplete
                   value={formData.address}
-                  onChange={(e) => {
-                    setFormData({ ...formData, address: e.target.value });
+                  onChange={(value) => {
+                    setFormData({ ...formData, address: value });
                     if (selectedClientId) setSelectedClientId(null);
                   }}
-                  data-testid="input-address" 
+                  placeholder="Enter site address"
+                  data-testid="input-address"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -846,12 +846,11 @@ export default function Leads() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="edit-address">Site Address</Label>
-              <Input 
-                id="edit-address" 
-                placeholder="Enter site address" 
+              <AddressAutocomplete
                 value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                data-testid="input-edit-address" 
+                onChange={(value) => setFormData({ ...formData, address: value })}
+                placeholder="Enter site address"
+                data-testid="input-edit-address"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
