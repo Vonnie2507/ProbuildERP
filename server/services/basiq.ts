@@ -53,6 +53,11 @@ export class BasiqService {
 
     const data = await response.json();
     
+    console.log("Token response data:", JSON.stringify(data, null, 2));
+    console.log("Access token type:", typeof data.access_token);
+    console.log("Access token length:", data.access_token?.length);
+    console.log("Access token first 50 chars:", data.access_token?.substring(0, 50));
+    
     cachedToken = {
       accessToken: data.access_token,
       expiresAt: now + (data.expires_in * 1000) - 60000
@@ -63,6 +68,10 @@ export class BasiqService {
 
   private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
     const token = await this.getAccessToken();
+    
+    console.log("Making request with token length:", token?.length);
+    console.log("Token first 50 chars:", token?.substring(0, 50));
+    console.log("Full Authorization header:", `Bearer ${token?.substring(0, 20)}...`);
     
     const response = await fetch(`${BASIQ_BASE_URL}${endpoint}`, {
       ...options,
