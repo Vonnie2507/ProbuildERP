@@ -93,6 +93,7 @@ const connectionFormSchema = z.object({
   institutionId: z.string().min(1, "Please select a bank"),
   loginId: z.string().min(1, "Login ID is required"),
   password: z.string().min(1, "Password is required"),
+  abn: z.string().min(11, "ABN must be 11 digits"),
 });
 
 function formatCurrency(amount: number | string | null | undefined): string {
@@ -301,6 +302,7 @@ export default function Financial() {
       institutionId: "",
       loginId: "",
       password: "",
+      abn: "",
     },
   });
 
@@ -734,25 +736,25 @@ export default function Financial() {
                           onChange={(e) => setInstitutionSearch(e.target.value)}
                           data-testid="input-institution-search"
                         />
-                        <div className="max-h-[150px] overflow-y-auto border rounded-md">
+                        <div className="border rounded-md bg-background">
                           {institutionsLoading ? (
                             <div className="p-4 text-center">
                               <Loader2 className="h-4 w-4 animate-spin mx-auto" />
                               <p className="text-sm text-muted-foreground mt-2">Loading banks...</p>
                             </div>
                           ) : filteredInstitutions.length > 0 ? (
-                            <div className="divide-y">
+                            <div className="divide-y max-h-[200px] overflow-y-auto">
                               {filteredInstitutions.map((inst) => (
-                                <button
-                                  type="button"
+                                <div
                                   key={inst.id}
-                                  className={`w-full p-3 text-left flex items-center gap-3 hover-elevate ${
+                                  className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-muted ${
                                     field.value === inst.id ? "bg-primary/10" : ""
                                   }`}
                                   onClick={() => field.onChange(inst.id)}
                                   data-testid={`option-institution-${inst.id}`}
+                                  role="button"
                                 >
-                                  <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
+                                  <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0 pointer-events-none">
                                     {inst.logo?.links?.full ? (
                                       <img 
                                         src={inst.logo.links.full} 
@@ -763,11 +765,11 @@ export default function Financial() {
                                       <Building2 className="h-4 w-4 text-muted-foreground" />
                                     )}
                                   </div>
-                                  <div>
+                                  <div className="pointer-events-none">
                                     <p className="font-medium text-sm">{inst.name}</p>
                                     <p className="text-xs text-muted-foreground">{inst.institutionType}</p>
                                   </div>
-                                </button>
+                                </div>
                               ))}
                             </div>
                           ) : (
@@ -836,6 +838,28 @@ export default function Financial() {
                     </FormControl>
                     <FormDescription>
                       Your credentials are securely transmitted via Open Banking
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="abn"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>ABN</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="11 digit ABN (e.g., 11111111111)"
+                        {...field}
+                        maxLength={11}
+                        data-testid="input-abn"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Your Australian Business Number (11 digits)
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
