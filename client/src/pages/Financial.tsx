@@ -92,15 +92,10 @@ interface Institution {
 }
 
 const connectionFormSchema = z.object({
-  institutionId: z.string().min(1, "Please select a bank"),
-  loginId: z.string().min(1, "Login ID is required"),
-  password: z.string().min(1, "Password is required"),
   email: z.string().email("Valid email required"),
-  mobile: z.string().min(10, "Mobile number required (e.g., +61400000000)"),
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
-  businessName: z.string().min(1, "Business name is required"),
-  abn: z.string().min(11, "ABN must be 11 digits"),
+  mobile: z.string().optional(),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
 });
 
 function formatCurrency(amount: number | string | null | undefined): string {
@@ -306,15 +301,10 @@ export default function Financial() {
   const form = useForm<z.infer<typeof connectionFormSchema>>({
     resolver: zodResolver(connectionFormSchema),
     defaultValues: {
-      institutionId: "",
-      loginId: "",
-      password: "",
       email: "",
-      mobile: "+61",
+      mobile: "",
       firstName: "",
       lastName: "",
-      businessName: "Probuild PVC",
-      abn: "29688327479",
     },
   });
 
@@ -366,23 +356,37 @@ export default function Financial() {
 
   const connectMutation = useMutation({
     mutationFn: async (data: z.infer<typeof connectionFormSchema>) => {
-      return apiRequest("POST", "/api/financial/connections", data);
+      const response = await apiRequest("POST", "/api/financial/connections", {
+        email: data.email,
+        mobile: data.mobile || undefined,
+        firstName: data.firstName || undefined,
+        lastName: data.lastName || undefined,
+      });
+      return response;
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/financial/connections"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/overview"] });
       setShowConnectDialog(false);
       form.reset();
-      toast({ 
-        title: "Bank Connection Initiated", 
-        description: "Your bank is being connected. This may take a few moments." 
-      });
+      
+      // Redirect to Basiq Consent UI if we have a consent URL
+      if (data.consentUrl) {
+        toast({ 
+          title: "Redirecting to Bank Connection", 
+          description: "Opening secure portal to connect your bank..." 
+        });
+        window.open(data.consentUrl, "_blank");
+      } else {
+        toast({ 
+          title: "Bank Connection Initiated", 
+          description: "Your bank is being connected. This may take a few moments." 
+        });
+      }
     },
     onError: (error: any) => {
       toast({ 
         title: "Connection Failed", 
-        description: error.message || "Failed to connect to bank. Please check your credentials.",
+        description: error.message || "Failed to start bank connection. Please try again.",
         variant: "destructive" 
       });
     },
@@ -728,161 +732,12 @@ export default function Financial() {
               Connect Bank Account
             </DialogTitle>
             <DialogDescription>
-              Connect to your bank using secure Open Banking credentials.
+              Enter your email to start the secure bank connection process. You'll be redirected to Basiq's secure portal to complete the connection.
             </DialogDescription>
           </DialogHeader>
           
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onConnectSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="institutionId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Select Bank</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value || ""}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-institution">
-                          <SelectValue placeholder="Search and select your bank..." />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent className="max-h-[300px]">
-                        {institutionsLoading ? (
-                          <div className="p-4 text-center text-muted-foreground">
-                            <Loader2 className="h-4 w-4 animate-spin mx-auto mb-2" />
-                            Loading banks...
-                          </div>
-                        ) : (
-                          <>
-                            <SelectGroup>
-                              <SelectLabel>Australian Banks</SelectLabel>
-                              {filteredInstitutions.filter(i => i.id.startsWith("AU")).map((inst) => (
-                                <SelectItem 
-                                  key={inst.id} 
-                                  value={inst.id}
-                                  data-testid={`option-institution-${inst.id}`}
-                                >
-                                  {inst.name}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                            <SelectGroup>
-                              <SelectLabel>New Zealand Banks</SelectLabel>
-                              {filteredInstitutions.filter(i => i.id.startsWith("NZ")).map((inst) => (
-                                <SelectItem 
-                                  key={inst.id} 
-                                  value={inst.id}
-                                  data-testid={`option-institution-${inst.id}`}
-                                >
-                                  {inst.name}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </>
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="loginId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Login ID / Username</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Enter your bank login ID"
-                        {...field}
-                        data-testid="input-login-id"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Your internet banking username or customer ID
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="Enter your password"
-                          {...field}
-                          data-testid="input-password"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0 h-full px-3"
-                          onClick={() => setShowPassword(!showPassword)}
-                          data-testid="button-toggle-password"
-                        >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </Button>
-                      </div>
-                    </FormControl>
-                    <FormDescription>
-                      Your credentials are securely transmitted via Open Banking
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-3">
-                <FormField
-                  control={form.control}
-                  name="firstName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>First Name</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="First name"
-                          {...field}
-                          data-testid="input-first-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="lastName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Last Name</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="Last name"
-                          {...field}
-                          data-testid="input-last-name"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-
               <FormField
                 control={form.control}
                 name="email"
@@ -892,11 +747,14 @@ export default function Financial() {
                     <FormControl>
                       <Input
                         type="email"
-                        placeholder="your@email.com"
+                        placeholder="admin@probuildpvc.com.au"
                         {...field}
                         data-testid="input-email"
                       />
                     </FormControl>
+                    <FormDescription>
+                      Used to identify your bank connection
+                    </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -907,7 +765,7 @@ export default function Financial() {
                 name="mobile"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Mobile Number</FormLabel>
+                    <FormLabel>Mobile Number (Optional)</FormLabel>
                     <FormControl>
                       <Input
                         placeholder="+61400000000"
@@ -916,52 +774,22 @@ export default function Financial() {
                       />
                     </FormControl>
                     <FormDescription>
-                      International format (e.g., +61400000000)
+                      Australian format: +61XXXXXXXXX
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="businessName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Business Name</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="Your business name"
-                        {...field}
-                        data-testid="input-business-name"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="abn"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>ABN</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="11 digit ABN (e.g., 11111111111)"
-                        {...field}
-                        maxLength={11}
-                        data-testid="input-abn"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Your Australian Business Number (11 digits)
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground mb-1">Secure Connection Process:</p>
+                <ol className="list-decimal list-inside space-y-1">
+                  <li>Click "Start Connection" below</li>
+                  <li>You'll be redirected to Basiq's secure portal</li>
+                  <li>Select your bank and enter your credentials there</li>
+                  <li>Return here to see your connected accounts</li>
+                </ol>
+              </div>
 
               <DialogFooter className="gap-2">
                 <Button 
@@ -978,7 +806,7 @@ export default function Financial() {
                   data-testid="button-submit-connect"
                 >
                   {connectMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Connect
+                  Start Connection
                 </Button>
               </DialogFooter>
             </form>

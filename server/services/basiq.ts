@@ -93,29 +93,27 @@ export class BasiqService {
 
   async createUser(params: {
     email: string;
-    mobile: string;
-    firstName: string;
-    lastName: string;
-    businessName: string;
-    abn: string;
+    mobile?: string;
+    firstName?: string;
+    lastName?: string;
   }): Promise<any> {
+    // Basiq v3 expects minimal user structure - NO business fields at user creation
     const body: any = { 
-      email: params.email,
-      mobile: params.mobile,
-      firstName: params.firstName,
-      lastName: params.lastName,
-      businessName: params.businessName,
-      businessIdNo: params.abn,
-      businessIdNoType: "ABN",
-      businessAddress: {
-        addressLine1: "Perth",
-        suburb: "Perth",
-        state: "WA",
-        postcode: "6000",
-        countryCode: "AUS"
-      },
-      verificationStatus: true
+      email: params.email
     };
+    
+    // Add optional mobile in international format
+    if (params.mobile) {
+      body.mobile = params.mobile;
+    }
+    
+    // Add name if provided (Basiq expects firstName/lastName at top level)
+    if (params.firstName) {
+      body.firstName = params.firstName;
+    }
+    if (params.lastName) {
+      body.lastName = params.lastName;
+    }
 
     return this.makeRequest("/users", {
       method: "POST",

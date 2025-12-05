@@ -5229,18 +5229,16 @@ export async function registerRoutes(
   // Get Basiq consent URL for a user (initiates the consent flow)
   app.post("/api/financial/consent-url", requireRoles("admin"), async (req, res) => {
     try {
-      const { email, mobile, firstName, lastName, businessName, abn } = req.body;
+      const { email, mobile, firstName, lastName } = req.body;
       const { BasiqService } = await import("./services/basiq");
       const basiq = new BasiqService();
       
-      // Create or get user
+      // Create user with minimal fields (Basiq v3 requirement)
       const basiqUser = await basiq.createUser({
         email: email || "admin@probuildpvc.com.au",
-        mobile: mobile || "+61400000000",
+        mobile: mobile,
         firstName: firstName || "Probuild",
-        lastName: lastName || "PVC",
-        businessName: businessName || "Probuild PVC",
-        abn: abn || "29688327479"
+        lastName: lastName || "Admin"
       });
       
       // Get client token bound to user (needed for consent UI)
@@ -5291,47 +5289,49 @@ export async function registerRoutes(
     }
   });
 
-  // Create a new bank connection
+  // Create a new bank connection - using Consent UI flow
   app.post("/api/financial/connections", requireRoles("admin"), async (req, res) => {
     try {
-      const { institutionId, institutionName, loginId, password, email, mobile, firstName, lastName, businessName, abn } = req.body;
+      const { email, mobile, firstName, lastName } = req.body;
       
-      if (!institutionId || !loginId || !password) {
-        return res.status(400).json({ error: "institutionId, loginId, and password are required" });
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
       }
 
       const { BasiqService } = await import("./services/basiq");
       const basiq = new BasiqService();
       
-      // Create or get Basiq user with all fields
+      // Create Basiq user with minimal fields (Basiq v3 requirement)
       const basiqUser = await basiq.createUser({
-        email: email || "admin@probuildpvc.com.au",
-        mobile: mobile || "+61400000000",
+        email: email,
+        mobile: mobile,
         firstName: firstName || "Probuild",
-        lastName: lastName || "PVC",
-        businessName: businessName || "Probuild PVC",
-        abn: abn || "29688327479"
+        lastName: lastName || "Admin"
       });
       
-      // Create connection
-      const job = await basiq.createConnection(basiqUser.id, institutionId, loginId, password);
+      // Get client token for Consent UI
+      const clientToken = await basiq.getClientToken(basiqUser.id);
       
-      // Store connection in database
+      // Build consent URL - user will complete bank connection through Basiq's secure UI
+      const consentUrl = `https://consent.basiq.io/home?token=${clientToken}`;
+      
+      // Store the pending connection
       const connection = await storage.createBankConnection({
         ownerUserId: req.session?.userId || null,
         basiqUserId: basiqUser.id,
         basiqConnectionId: null,
-        institutionId,
-        institutionName: institutionName || null,
-        status: "processing",
-        refreshJobId: job.id,
-        metadata: { jobCreatedAt: new Date().toISOString() }
+        institutionId: null,
+        institutionName: null,
+        status: "pending_consent",
+        refreshJobId: null,
+        metadata: { createdAt: new Date().toISOString() }
       });
 
       res.status(201).json({ 
-        connection, 
-        jobId: job.id,
-        message: "Connection initiated. Poll job status to track progress." 
+        connection,
+        consentUrl,
+        userId: basiqUser.id,
+        message: "Redirect to consent URL to complete bank connection" 
       });
     } catch (error: any) {
       console.error("Error creating bank connection:", error);
