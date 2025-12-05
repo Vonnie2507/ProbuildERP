@@ -5197,18 +5197,18 @@ export async function registerRoutes(
       const { BasiqService } = await import("./services/basiq");
       const basiq = new BasiqService();
       
-      // Create CDR consent - this returns the consent ID and redirect URL
-      const { consentId, connectUrl } = await basiq.createCDRConsent(businessName, businessIdNo);
+      // Create Basiq user and get Consent UI URL
+      const { userId, connectUrl } = await basiq.createCDRConsent(businessName, businessIdNo);
       
-      // Store the pending connection with consent ID
+      // Store the pending connection with Basiq user ID
       const connection = await storage.createBankConnection({
         ownerUserId: req.session?.user?.id || null,
-        basiqConsentId: consentId,
-        basiqUserId: null,
+        basiqConsentId: null, // Will be set after consent is completed
+        basiqUserId: userId,
         basiqConnectionId: null,
         institutionId: null,
         institutionName: null,
-        status: "processing",
+        status: "pending_consent",
         refreshJobId: null,
         metadata: { 
           createdAt: new Date().toISOString(),
@@ -5219,9 +5219,9 @@ export async function registerRoutes(
 
       res.status(201).json({ 
         connectionId: connection.id,
-        consentId,
+        basiqUserId: userId,
         connectUrl,
-        message: "Redirect user to connectUrl to complete bank authorization" 
+        message: "Redirect user to connectUrl to complete bank authorization in Basiq Consent UI" 
       });
     } catch (error: any) {
       console.error("Error creating CDR consent:", error);

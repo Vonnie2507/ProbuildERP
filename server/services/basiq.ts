@@ -67,15 +67,15 @@ export class BasiqService {
   }
 
   private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
-    // For Basiq API v3+ CDR flow, use Bearer with the API key directly
-    console.log("Making request with Bearer API key");
-    console.log("API key length:", this.apiKey?.length);
-    console.log("API key first 20 chars:", this.apiKey?.substring(0, 20));
+    // Get SERVER_ACCESS token for API calls
+    const token = await this.getAccessToken();
+    
+    console.log("Making request with Bearer token to:", endpoint);
     
     const response = await fetch(`${BASIQ_BASE_URL}${endpoint}`, {
       ...options,
       headers: {
-        "Authorization": `Bearer ${this.apiKey}`,
+        "Authorization": `Bearer ${token}`,
         "Accept": "application/json",
         "Content-Type": "application/json",
         "basiq-version": "3.0",
@@ -92,44 +92,77 @@ export class BasiqService {
   }
 
   /**
-   * Create a CDR consent for Open Banking access
-   * This is the ONLY way to connect to banks like Westpac Business
-   * NO login credentials should ever be collected or sent
+   * Get CLIENT_ACCESS token bound to a specific userId
+   * This is required for accessing the Consent UI
    */
-  async createCDRConsent(businessName?: string, businessIdNo?: string): Promise<{ consentId: string; connectUrl: string }> {
-    const redirectUri = process.env.BASIQ_REDIRECT_URI || 
-      `${process.env.REPLIT_DOMAINS?.split(",")[0] ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000"}/api/financial/callback`;
-
-    console.log("Creating CDR consent with redirect URI:", redirectUri);
-
-    const consentPayload = {
-      type: "cdr",
-      permissions: [
-        "ACCOUNT_BASIC_ACCESS",
-        "ACCOUNT_DETAIL",
-        "TRANSACTION_DETAIL"
-      ],
-      businessName: businessName || BUSINESS_DETAILS.businessName,
-      businessIdNo: businessIdNo || BUSINESS_DETAILS.businessIdNo,
-      organisationType: BUSINESS_DETAILS.organisationType,
-      sharingDuration: 365
-    };
-
-    console.log("CDR consent payload:", JSON.stringify(consentPayload, null, 2));
-
-    const consent = await this.makeRequest("/consents", {
+  private async getClientAccessToken(userId: string): Promise<string> {
+    console.log("Getting CLIENT_ACCESS token for userId:", userId);
+    
+    const response = await fetch(`${BASIQ_BASE_URL}/token`, {
       method: "POST",
-      body: JSON.stringify(consentPayload)
+      headers: {
+        "Authorization": `Basic ${this.apiKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "basiq-version": "3.0"
+      },
+      body: `scope=CLIENT_ACCESS&userId=${userId}`
     });
 
-    console.log("CDR consent created:", consent);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to get client access token: ${response.status} - ${errorText}`);
+    }
 
-    const consentId = consent.id;
+    const data = await response.json();
+    console.log("Client token obtained successfully");
+    return data.access_token;
+  }
+
+  /**
+   * Create a Basiq user (required before consent)
+   */
+  async createUser(email?: string, mobile?: string): Promise<string> {
+    console.log("Creating Basiq user");
     
-    // Generate the Basiq Connect URL for the user to authenticate
-    const connectUrl = `https://connect.basiq.io/consent?consentId=${consentId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+    const userData: any = {};
+    if (email) userData.email = email;
+    if (mobile) userData.mobile = mobile;
+    
+    const user = await this.makeRequest("/users", {
+      method: "POST",
+      body: JSON.stringify(userData)
+    });
+    
+    console.log("User created with ID:", user.id);
+    return user.id;
+  }
 
-    return { consentId, connectUrl };
+  /**
+   * Create a CDR consent for Open Banking access
+   * This uses the Basiq Consent UI flow:
+   * 1. Create a Basiq user
+   * 2. Get a CLIENT_ACCESS token bound to that user
+   * 3. Return the Consent UI URL for the user to complete consent
+   */
+  async createCDRConsent(businessName?: string, businessIdNo?: string): Promise<{ userId: string; connectUrl: string }> {
+    console.log("Starting CDR consent flow...");
+    console.log("Business:", businessName || BUSINESS_DETAILS.businessName);
+    
+    // Step 1: Create a Basiq user (email/mobile optional for business accounts)
+    const userId = await this.createUser();
+    console.log("Created Basiq user:", userId);
+    
+    // Step 2: Get a CLIENT_ACCESS token bound to this user
+    const clientToken = await this.getClientAccessToken(userId);
+    console.log("Got client token for user");
+    
+    // Step 3: Generate the Basiq Consent UI URL
+    // The Consent UI handles all the CDR complexity including bank selection
+    const connectUrl = `https://consent.basiq.io/home?token=${clientToken}`;
+    
+    console.log("Consent UI URL generated");
+
+    return { userId, connectUrl };
   }
 
   /**
