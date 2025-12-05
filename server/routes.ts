@@ -5187,73 +5187,140 @@ export async function registerRoutes(
     }
   });
 
-  // ============ FINANCIAL / BANKING (Basiq Integration) ============
+  // ============ FINANCIAL / BANKING (Basiq CDR Open Banking Integration) ============
+  // IMPORTANT: This uses ONLY the CDR consent flow - NO login credentials are ever collected
   
-  // Basiq callback endpoint - handles redirect after consent UI completion
+  // Create CDR consent and get Connect URL - initiates the Open Banking flow
+  app.post("/api/financial/connect-bank", requireRoles("admin"), async (req, res) => {
+    try {
+      const { BasiqService } = await import("./services/basiq");
+      const basiq = new BasiqService();
+      
+      // Create CDR consent - this returns the consent ID and redirect URL
+      const { consentId, connectUrl } = await basiq.createCDRConsent();
+      
+      // Store the pending connection with consent ID
+      const connection = await storage.createBankConnection({
+        ownerUserId: req.session?.user?.id || null,
+        basiqConsentId: consentId,
+        basiqUserId: null,
+        basiqConnectionId: null,
+        institutionId: null,
+        institutionName: null,
+        status: "processing",
+        refreshJobId: null,
+        metadata: { 
+          createdAt: new Date().toISOString(),
+          businessName: "Probuild PVC",
+          businessIdNo: "29688327479"
+        }
+      });
+
+      res.status(201).json({ 
+        connectionId: connection.id,
+        consentId,
+        connectUrl,
+        message: "Redirect user to connectUrl to complete bank authorization" 
+      });
+    } catch (error: any) {
+      console.error("Error creating CDR consent:", error);
+      res.status(500).json({ error: error.message || "Failed to create consent" });
+    }
+  });
+
+  // Basiq callback endpoint - handles redirect after user completes consent on Westpac
   app.get("/api/financial/callback", async (req, res) => {
     try {
-      // Basiq redirects with jobIds in the URL
-      const { jobIds, error } = req.query;
+      const { consentId, error, connectionId } = req.query;
       
       if (error) {
         console.error("Basiq callback error:", error);
-        // Redirect to financial page with error
         return res.redirect(`/financial?error=${encodeURIComponent(error as string)}`);
       }
+
+      if (consentId) {
+        console.log("Consent callback received, consentId:", consentId);
+        
+        // Find the connection with this consent ID and activate it
+        const { BasiqService } = await import("./services/basiq");
+        const basiq = new BasiqService();
+        
+        // Verify consent is active
+        const consent = await basiq.getConsent(consentId as string);
+        console.log("Consent status:", consent);
+        
+        if (consent.status === "active") {
+          // Find connection by consent ID and update it
+          const connections = await storage.getBankConnections();
+          const connection = connections.find(c => c.basiqConsentId === consentId);
+          
+          if (connection) {
+            // Fetch accounts from the consent
+            const accounts = await basiq.getAccountsByConsent(consentId as string);
+            console.log("Fetched accounts:", accounts.length);
+            
+            // Get institution info from first account
+            const firstAccount = accounts[0];
+            const institutionName = firstAccount?.institution?.shortName || firstAccount?.institution?.name || "Unknown Bank";
+            const institutionId = firstAccount?.institution?.id;
+            
+            // Update connection to active
+            await storage.updateBankConnection(connection.id, {
+              status: "active",
+              institutionId,
+              institutionName,
+              lastSyncedAt: new Date(),
+              consentExpiresAt: consent.expiresAt ? new Date(consent.expiresAt) : null
+            });
+            
+            // Sync accounts to database
+            await basiq.syncAccountsToDatabase(connection.id);
+          }
+        }
+        
+        return res.redirect(`/financial?success=true&consentId=${consentId}`);
+      }
       
-      // Redirect to financial page with success and job IDs
-      const redirectUrl = jobIds 
-        ? `/financial?success=true&jobIds=${encodeURIComponent(jobIds as string)}`
-        : `/financial?success=true`;
-      
-      console.log("Basiq callback received, redirecting to:", redirectUrl);
-      res.redirect(redirectUrl);
+      // Fallback redirect
+      res.redirect("/financial?success=true");
     } catch (error) {
       console.error("Error handling Basiq callback:", error);
       res.redirect("/financial?error=callback_failed");
     }
   });
 
-  // Manage consent URL - for users to manage their data sharing consent
-  app.get("/api/financial/manage-consent", async (req, res) => {
+  // Basiq webhook endpoint - receives notifications about data updates
+  app.post("/api/basiq/webhook", async (req, res) => {
     try {
-      // This endpoint handles when users want to manage their consent
-      // Basiq may redirect here for consent management
-      res.redirect("/financial?tab=connections&action=manage-consent");
+      console.log("Basiq webhook received:", JSON.stringify(req.body, null, 2));
+      
+      const { type, consentId, data } = req.body;
+      
+      // Log the webhook event for future processing
+      console.log(`Webhook event: ${type} for consent: ${consentId}`);
+      
+      // Handle different webhook events
+      if (type === "transactions.available") {
+        // New transactions are available - trigger sync
+        console.log("New transactions available for sync");
+        // TODO: Implement automatic transaction sync
+      } else if (type === "consent.revoked") {
+        // User revoked consent - update connection status
+        console.log("Consent revoked for:", consentId);
+        const connections = await storage.getBankConnections();
+        const connection = connections.find(c => c.basiqConsentId === consentId);
+        if (connection) {
+          await storage.updateBankConnection(connection.id, {
+            status: "inactive"
+          });
+        }
+      }
+      
+      // Always respond 200 to acknowledge receipt
+      res.status(200).json({ received: true });
     } catch (error) {
-      console.error("Error handling manage consent:", error);
-      res.redirect("/financial");
-    }
-  });
-
-  // Get Basiq consent URL for a user (initiates the consent flow)
-  app.post("/api/financial/consent-url", requireRoles("admin"), async (req, res) => {
-    try {
-      const { email, mobile, firstName, lastName } = req.body;
-      const { BasiqService } = await import("./services/basiq");
-      const basiq = new BasiqService();
-      
-      // Create user with minimal fields (Basiq v3 requirement)
-      const basiqUser = await basiq.createUser({
-        email: email || "admin@probuildpvc.com.au",
-        mobile: mobile,
-        firstName: firstName || "Probuild",
-        lastName: lastName || "Admin"
-      });
-      
-      // Get client token bound to user (needed for consent UI)
-      const clientToken = await basiq.getClientToken(basiqUser.id);
-      
-      // Build consent URL
-      const consentUrl = `https://consent.basiq.io/home?token=${clientToken}`;
-      
-      res.json({ 
-        consentUrl,
-        userId: basiqUser.id 
-      });
-    } catch (error: any) {
-      console.error("Error generating consent URL:", error);
-      res.status(500).json({ error: error.message || "Failed to generate consent URL" });
+      console.error("Error handling Basiq webhook:", error);
+      res.status(200).json({ received: true, error: "Processing error" });
     }
   });
 
@@ -5268,127 +5335,41 @@ export async function registerRoutes(
     }
   });
 
-  // Get available institutions from Basiq
-  app.get("/api/financial/institutions", requireRoles("admin"), async (req, res) => {
-    try {
-      const { BasiqService } = await import("./services/basiq");
-      const basiq = new BasiqService();
-      const institutions = await basiq.getInstitutions();
-      
-      // Filter to show only major Australian banks that are operational
-      const filtered = institutions.filter((inst: any) => 
-        inst.status !== "major-outage" && 
-        inst.stage !== "alpha" &&
-        inst.authorization !== "other"
-      );
-      
-      res.json(filtered);
-    } catch (error) {
-      console.error("Error fetching institutions:", error);
-      res.status(500).json({ error: "Failed to fetch institutions" });
-    }
-  });
-
-  // Create a new bank connection - using Consent UI flow
-  app.post("/api/financial/connections", requireRoles("admin"), async (req, res) => {
-    try {
-      const { email, mobile, firstName, lastName } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ error: "Email is required" });
-      }
-
-      const { BasiqService } = await import("./services/basiq");
-      const basiq = new BasiqService();
-      
-      // Create Basiq user with minimal fields (Basiq v3 requirement)
-      const basiqUser = await basiq.createUser({
-        email: email,
-        mobile: mobile,
-        firstName: firstName || "Probuild",
-        lastName: lastName || "Admin"
-      });
-      
-      // Get client token for Consent UI
-      const clientToken = await basiq.getClientToken(basiqUser.id);
-      
-      // Build consent URL - user will complete bank connection through Basiq's secure UI
-      const consentUrl = `https://consent.basiq.io/home?token=${clientToken}`;
-      
-      // Store the pending connection
-      const connection = await storage.createBankConnection({
-        ownerUserId: req.session?.userId || null,
-        basiqUserId: basiqUser.id,
-        basiqConnectionId: null,
-        institutionId: null,
-        institutionName: null,
-        status: "pending_consent",
-        refreshJobId: null,
-        metadata: { createdAt: new Date().toISOString() }
-      });
-
-      res.status(201).json({ 
-        connection,
-        consentUrl,
-        userId: basiqUser.id,
-        message: "Redirect to consent URL to complete bank connection" 
-      });
-    } catch (error: any) {
-      console.error("Error creating bank connection:", error);
-      res.status(500).json({ error: error.message || "Failed to create connection" });
-    }
-  });
-
-  // Get job status for a connection
-  app.get("/api/financial/jobs/:jobId", requireRoles("admin"), async (req, res) => {
-    try {
-      const { BasiqService } = await import("./services/basiq");
-      const basiq = new BasiqService();
-      const job = await basiq.getJobStatus(req.params.jobId);
-      res.json(job);
-    } catch (error: any) {
-      console.error("Error fetching job status:", error);
-      res.status(500).json({ error: error.message || "Failed to fetch job status" });
-    }
-  });
-
-  // Complete connection setup after job is done
-  app.post("/api/financial/connections/:id/complete", requireRoles("admin"), async (req, res) => {
+  // Refresh accounts for a connection
+  app.post("/api/financial/connections/:id/refresh", requireRoles("admin"), async (req, res) => {
     try {
       const connection = await storage.getBankConnectionById(req.params.id);
       if (!connection) {
         return res.status(404).json({ error: "Connection not found" });
       }
 
-      if (!connection.refreshJobId || !connection.basiqUserId) {
-        return res.status(400).json({ error: "Connection is missing job or user ID" });
+      if (!connection.basiqConsentId) {
+        return res.status(400).json({ error: "Connection has no consent ID" });
       }
 
       const { BasiqService } = await import("./services/basiq");
       const basiq = new BasiqService();
       
-      // Poll job to completion
-      const job = await basiq.pollJobUntilComplete(connection.refreshJobId);
+      // Verify consent is still active
+      const consent = await basiq.getConsent(connection.basiqConsentId);
+      if (consent.status !== "active") {
+        await storage.updateBankConnection(connection.id, { status: "inactive" });
+        return res.status(400).json({ error: "Consent is no longer active. Please reconnect." });
+      }
       
-      // Extract connection ID from job
-      const verifyStep = job.steps?.find((s: any) => s.title === "verify-credentials");
-      const basiqConnectionId = verifyStep?.result?.url?.split("/").pop();
-
-      // Update connection status
-      await storage.updateBankConnection(connection.id, {
-        basiqConnectionId,
-        status: "active",
-        lastSyncedAt: new Date()
-      });
-
       // Sync accounts
       await basiq.syncAccountsToDatabase(connection.id);
+      
+      // Update last synced time
+      await storage.updateBankConnection(connection.id, {
+        lastSyncedAt: new Date()
+      });
 
       const updated = await storage.getBankConnectionById(connection.id);
       res.json(updated);
     } catch (error: any) {
-      console.error("Error completing connection:", error);
-      res.status(500).json({ error: error.message || "Failed to complete connection" });
+      console.error("Error refreshing connection:", error);
+      res.status(500).json({ error: error.message || "Failed to refresh connection" });
     }
   });
 
