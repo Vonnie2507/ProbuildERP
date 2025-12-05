@@ -276,6 +276,47 @@ export async function registerRoutes(
   });
 
   // ============ SOIL DATA ============
+  // Perth Coastal Limestone Zone Detection (Tamala Limestone Formation)
+  // This limestone belt runs along Perth's coast from Yanchep to Mandurah
+  function isInPerthLimestoneZone(lat: number, lng: number): { inZone: boolean; zoneName: string | null } {
+    // Perth metro area bounds with limestone
+    const PERTH_LAT_MIN = -32.6;  // South of Mandurah
+    const PERTH_LAT_MAX = -31.4;  // North of Yanchep
+    const COAST_LNG = 115.75;     // Approximate coastline longitude
+    const LIMESTONE_INLAND_EXTENT = 0.12; // ~12km inland from coast
+    
+    // Check if within Perth metro latitude range
+    if (lat < PERTH_LAT_MIN || lat > PERTH_LAT_MAX) {
+      return { inZone: false, zoneName: null };
+    }
+    
+    // Check if within coastal limestone belt (within ~12km of coast)
+    // The coast curves, so we use a simplified check
+    const distanceFromCoast = Math.abs(lng - COAST_LNG);
+    
+    // Northern suburbs (Yanchep to Scarborough) - limestone extends further east
+    if (lat > -31.9 && lng >= 115.70 && lng <= 115.85) {
+      return { inZone: true, zoneName: "Tamala Limestone (Northern Coastal)" };
+    }
+    
+    // Central coastal suburbs (Cottesloe, Mosman Park, Fremantle)
+    if (lat >= -32.1 && lat <= -31.9 && lng >= 115.74 && lng <= 115.80) {
+      return { inZone: true, zoneName: "Tamala Limestone (Central Coastal)" };
+    }
+    
+    // Southern suburbs (Rockingham, Safety Bay)
+    if (lat >= -32.4 && lat < -32.1 && lng >= 115.72 && lng <= 115.80) {
+      return { inZone: true, zoneName: "Tamala Limestone (Southern Coastal)" };
+    }
+    
+    // General coastal check - within 12km of coast
+    if (distanceFromCoast <= LIMESTONE_INLAND_EXTENT) {
+      return { inZone: true, zoneName: "Tamala Limestone (Coastal Belt)" };
+    }
+    
+    return { inZone: false, zoneName: null };
+  }
+  
   app.get("/api/soil-data", async (req, res) => {
     try {
       const { lat, lng } = req.query;
@@ -290,6 +331,9 @@ export async function registerRoutes(
       if (isNaN(latitude) || isNaN(longitude)) {
         return res.status(400).json({ error: "Invalid lat/lng values" });
       }
+      
+      // Check for Perth coastal limestone zone
+      const limestoneCheck = isInPerthLimestoneZone(latitude, longitude);
       
       // Call ASRIS (CSIRO) Soil API with retry
       const asrisUrl = `https://asris.csiro.au/ASRISApi/api/APSIM/getApsoil?longitude=${longitude}&latitude=${latitude}`;
@@ -360,19 +404,31 @@ export async function registerRoutes(
         });
       }
       
-      // Determine installation difficulty based on soil type
+      // Determine installation difficulty based on soil type and limestone zone
       let installationNotes = "";
+      let geologyWarning: string | null = null;
       const soilLower = soilType.toLowerCase();
-      if (soilLower.includes("sand") || soilLower.includes("loamy sand")) {
-        installationNotes = "Easy digging - standard auger should work well";
-      } else if (soilLower.includes("loam")) {
-        installationNotes = "Moderate digging - standard equipment suitable";
+      
+      // Check for limestone zone FIRST - this takes priority
+      if (limestoneCheck.inZone) {
+        installationNotes = "LIMESTONE ZONE - Core drill likely required. Shallow rock expected within 300-500mm.";
+        geologyWarning = limestoneCheck.zoneName;
+      } else if (soilLower.includes("rock") || soilLower.includes("limestone") || soilLower.includes("calcrete")) {
+        installationNotes = "Core drill likely required";
       } else if (soilLower.includes("clay")) {
         installationNotes = "Harder digging - may require more time/effort";
-      } else if (soilLower.includes("rock") || soilLower.includes("limestone")) {
-        installationNotes = "Core drill likely required";
       } else if (soilLower.includes("gravel")) {
         installationNotes = "Mixed conditions - check site for rock presence";
+      } else if (soilLower.includes("loam") && !soilLower.includes("sand")) {
+        installationNotes = "Moderate digging - standard equipment suitable";
+      } else if (soilLower.includes("sand") || soilLower.includes("loamy sand")) {
+        // Even in sandy areas, check if we're near limestone zone
+        if (limestoneCheck.inZone) {
+          installationNotes = "LIMESTONE ZONE - Sandy topsoil but rock likely below. Core drill recommended.";
+          geologyWarning = limestoneCheck.zoneName;
+        } else {
+          installationNotes = "Easy digging - standard auger should work well";
+        }
       }
       
       res.json({
@@ -384,6 +440,7 @@ export async function registerRoutes(
         ascOrder: ascOrder !== "NA" ? ascOrder : null,
         comments: comments || null,
         installationNotes: installationNotes || null,
+        geologyWarning: geologyWarning,
         source: "CSIRO ASRIS",
       });
     } catch (error) {

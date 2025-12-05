@@ -22,6 +22,7 @@ interface SoilData {
   ascOrder: string | null;
   comments: string | null;
   installationNotes: string | null;
+  geologyWarning: string | null;
   source: string;
 }
 
@@ -194,24 +195,41 @@ function SoilDataDisplay({ lat, lng }: { lat: number; lng: number }) {
     );
   }
 
+  // Check if this is a limestone warning
+  const isLimestoneZone = soilData.geologyWarning?.includes("Limestone") || 
+                           soilData.installationNotes?.includes("LIMESTONE");
+
   // Determine the icon and color based on installation difficulty
   const getInstallIcon = () => {
     if (!soilData.installationNotes) return null;
     const notes = soilData.installationNotes.toLowerCase();
-    if (notes.includes("easy") || notes.includes("standard")) {
-      return <CheckCircle className="h-4 w-4 text-green-600" />;
-    } else if (notes.includes("harder") || notes.includes("core drill")) {
+    if (notes.includes("limestone") || notes.includes("core drill")) {
+      return <AlertTriangle className="h-4 w-4 text-red-500" />;
+    } else if (notes.includes("harder")) {
       return <AlertTriangle className="h-4 w-4 text-amber-500" />;
+    } else if (notes.includes("easy") || notes.includes("standard")) {
+      return <CheckCircle className="h-4 w-4 text-green-600" />;
     }
     return <Mountain className="h-4 w-4 text-muted-foreground" />;
   };
 
   return (
-    <div className="mt-2 rounded-md border bg-muted/30" data-testid="soil-data-display">
-      <div className="px-3 py-2 border-b bg-muted/50 flex items-center gap-2">
-        <Mountain className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">Soil Information</span>
+    <div className={`mt-2 rounded-md border ${isLimestoneZone ? 'border-red-300 bg-red-50 dark:bg-red-950/20' : 'bg-muted/30'}`} data-testid="soil-data-display">
+      <div className={`px-3 py-2 border-b flex items-center gap-2 ${isLimestoneZone ? 'bg-red-100 dark:bg-red-900/30' : 'bg-muted/50'}`}>
+        {isLimestoneZone ? (
+          <AlertTriangle className="h-4 w-4 text-red-500" />
+        ) : (
+          <Mountain className="h-4 w-4 text-primary" />
+        )}
+        <span className={`text-sm font-medium ${isLimestoneZone ? 'text-red-700 dark:text-red-400' : ''}`}>
+          {isLimestoneZone ? 'Geology Warning' : 'Soil Information'}
+        </span>
       </div>
+      {soilData.geologyWarning && (
+        <div className="px-3 py-2 bg-red-100 dark:bg-red-900/20 border-b text-sm font-medium text-red-700 dark:text-red-400">
+          {soilData.geologyWarning}
+        </div>
+      )}
       <div className="p-3 space-y-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="text-muted-foreground">Soil Type:</span>
@@ -224,9 +242,11 @@ function SoilDataDisplay({ lat, lng }: { lat: number; lng: number }) {
           </div>
         )}
         {soilData.installationNotes && (
-          <div className="mt-2 pt-2 border-t flex items-start gap-2">
+          <div className={`mt-2 pt-2 border-t flex items-start gap-2 ${isLimestoneZone ? 'border-red-200' : ''}`}>
             {getInstallIcon()}
-            <span className="text-xs" data-testid="installation-notes">{soilData.installationNotes}</span>
+            <span className={`text-xs ${isLimestoneZone ? 'font-medium text-red-700 dark:text-red-400' : ''}`} data-testid="installation-notes">
+              {soilData.installationNotes}
+            </span>
           </div>
         )}
       </div>
