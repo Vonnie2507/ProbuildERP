@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import {
   Landmark,
   CreditCard,
@@ -20,6 +23,8 @@ import {
   Search,
   Filter,
   ChevronDown,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,6 +55,16 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import type { BankAccount, BankConnection, BankTransaction } from "@shared/schema";
@@ -64,6 +79,21 @@ interface FinancialOverview {
   recentTransactions: BankTransaction[];
   lastSyncedAt: string | null;
 }
+
+interface Institution {
+  id: string;
+  name: string;
+  shortName?: string;
+  institutionType: string;
+  tier?: number;
+  logo?: { links?: { full?: string } };
+}
+
+const connectionFormSchema = z.object({
+  institutionId: z.string().min(1, "Please select a bank"),
+  loginId: z.string().min(1, "Login ID is required"),
+  password: z.string().min(1, "Password is required"),
+});
 
 function formatCurrency(amount: number | string | null | undefined): string {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -260,7 +290,19 @@ export default function Financial() {
   const [activeTab, setActiveTab] = useState("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
+  const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [institutionSearch, setInstitutionSearch] = useState("");
   const isAdmin = user?.role === "admin";
+
+  const form = useForm<z.infer<typeof connectionFormSchema>>({
+    resolver: zodResolver(connectionFormSchema),
+    defaultValues: {
+      institutionId: "",
+      loginId: "",
+      password: "",
+    },
+  });
 
   const { data: overview, isLoading: overviewLoading } = useQuery<FinancialOverview>({
     queryKey: ["/api/financial/overview"],
@@ -274,6 +316,16 @@ export default function Financial() {
     queryKey: ["/api/financial/connections"],
     enabled: isAdmin,
   });
+
+  const { data: institutions = [], isLoading: institutionsLoading } = useQuery<Institution[]>({
+    queryKey: ["/api/financial/institutions"],
+    enabled: isAdmin && showConnectDialog,
+  });
+
+  const filteredInstitutions = institutions.filter(inst => 
+    inst.name?.toLowerCase().includes(institutionSearch.toLowerCase()) ||
+    inst.shortName?.toLowerCase().includes(institutionSearch.toLowerCase())
+  ).slice(0, 20);
 
   const { data: transactions = [], isLoading: transactionsLoading } = useQuery<BankTransaction[]>({
     queryKey: ["/api/financial/transactions", { search: searchQuery, direction: directionFilter !== "all" ? directionFilter : undefined }],
@@ -297,6 +349,34 @@ export default function Financial() {
       });
     },
   });
+
+  const connectMutation = useMutation({
+    mutationFn: async (data: z.infer<typeof connectionFormSchema>) => {
+      return apiRequest("POST", "/api/financial/connections", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/connections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/overview"] });
+      setShowConnectDialog(false);
+      form.reset();
+      toast({ 
+        title: "Bank Connection Initiated", 
+        description: "Your bank is being connected. This may take a few moments." 
+      });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Connection Failed", 
+        description: error.message || "Failed to connect to bank. Please check your credentials.",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const onConnectSubmit = (data: z.infer<typeof connectionFormSchema>) => {
+    connectMutation.mutate(data);
+  };
 
   const filteredTransactions = transactions.filter(tx => {
     if (searchQuery) {
@@ -326,7 +406,10 @@ export default function Financial() {
           </p>
         </div>
         {isAdmin && (
-          <Button data-testid="button-connect-bank" disabled>
+          <Button 
+            data-testid="button-connect-bank" 
+            onClick={() => setShowConnectDialog(true)}
+          >
             <Plus className="h-4 w-4 mr-2" />
             Connect Bank
           </Button>
@@ -622,6 +705,165 @@ export default function Financial() {
           </TabsContent>
         )}
       </Tabs>
+
+      <Dialog open={showConnectDialog} onOpenChange={setShowConnectDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5" />
+              Connect Bank Account
+            </DialogTitle>
+            <DialogDescription>
+              Connect to your bank using secure Open Banking credentials.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onConnectSubmit)} className="space-y-4">
+              <FormField
+                control={form.control}
+                name="institutionId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Select Bank</FormLabel>
+                    <FormControl>
+                      <div className="space-y-2">
+                        <Input
+                          placeholder="Search banks..."
+                          value={institutionSearch}
+                          onChange={(e) => setInstitutionSearch(e.target.value)}
+                          data-testid="input-institution-search"
+                        />
+                        <div className="max-h-[150px] overflow-y-auto border rounded-md">
+                          {institutionsLoading ? (
+                            <div className="p-4 text-center">
+                              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+                              <p className="text-sm text-muted-foreground mt-2">Loading banks...</p>
+                            </div>
+                          ) : filteredInstitutions.length > 0 ? (
+                            <div className="divide-y">
+                              {filteredInstitutions.map((inst) => (
+                                <button
+                                  type="button"
+                                  key={inst.id}
+                                  className={`w-full p-3 text-left flex items-center gap-3 hover-elevate ${
+                                    field.value === inst.id ? "bg-primary/10" : ""
+                                  }`}
+                                  onClick={() => field.onChange(inst.id)}
+                                  data-testid={`option-institution-${inst.id}`}
+                                >
+                                  <div className="h-8 w-8 rounded bg-muted flex items-center justify-center shrink-0">
+                                    {inst.logo?.links?.full ? (
+                                      <img 
+                                        src={inst.logo.links.full} 
+                                        alt={inst.name}
+                                        className="h-6 w-6 object-contain"
+                                      />
+                                    ) : (
+                                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p className="font-medium text-sm">{inst.name}</p>
+                                    <p className="text-xs text-muted-foreground">{inst.institutionType}</p>
+                                  </div>
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="p-4 text-center text-muted-foreground text-sm">
+                              {institutionSearch ? "No banks found" : "Type to search banks"}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="loginId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Login ID / Username</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Enter your bank login ID"
+                        {...field}
+                        data-testid="input-login-id"
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      Your internet banking username or customer ID
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Enter your password"
+                          {...field}
+                          data-testid="input-password"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowPassword(!showPassword)}
+                          data-testid="button-toggle-password"
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" />
+                          ) : (
+                            <Eye className="h-4 w-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormDescription>
+                      Your credentials are securely transmitted via Open Banking
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter className="gap-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setShowConnectDialog(false)}
+                  data-testid="button-cancel-connect"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit" 
+                  disabled={connectMutation.isPending}
+                  data-testid="button-submit-connect"
+                >
+                  {connectMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Connect
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
