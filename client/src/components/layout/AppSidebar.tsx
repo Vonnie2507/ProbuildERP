@@ -27,6 +27,7 @@ import {
   TrendingUp,
   Upload,
   LayoutDashboard,
+  Landmark,
 } from "lucide-react";
 import {
   Sidebar,
@@ -79,6 +80,7 @@ const navigationConfig: NavGroup[] = [
   {
     label: "Finance",
     items: [
+      { title: "Banking", url: "/financial", icon: Landmark },
       { title: "Payments", url: "/payments", icon: CreditCard },
       { title: "Messages", url: "/messages", icon: MessageSquare, badge: "unread-messages" },
     ],

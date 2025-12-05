@@ -39,6 +39,7 @@ import LiveDocTemplates from "@/pages/LiveDocTemplates";
 import Import from "@/pages/Import";
 import Unauthorized from "@/pages/Unauthorized";
 import DashboardBuilder from "@/pages/DashboardBuilder";
+import Financial from "@/pages/Financial";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -219,6 +220,20 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/inventory">
           <MainLayout>
             <Inventory />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/financial/:rest*">
+        <ProtectedRoute path="/financial">
+          <MainLayout>
+            <Financial />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/financial">
+        <ProtectedRoute path="/financial">
+          <MainLayout>
+            <Financial />
           </MainLayout>
         </ProtectedRoute>
       </Route>
