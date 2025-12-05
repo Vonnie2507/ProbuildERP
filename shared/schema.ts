@@ -1980,13 +1980,14 @@ export const transactionDirectionEnum = pgEnum("transaction_direction", [
   "debit"
 ]);
 
-// Bank Connections - stores Basiq connection info
+// Bank Connections - stores Basiq CDR consent info
 export const bankConnections = pgTable("bank_connections", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   ownerUserId: varchar("owner_user_id").references(() => users.id),
+  basiqConsentId: varchar("basiq_consent_id", { length: 100 }),
   basiqUserId: varchar("basiq_user_id", { length: 100 }),
   basiqConnectionId: varchar("basiq_connection_id", { length: 100 }),
-  institutionId: varchar("institution_id", { length: 50 }).notNull(),
+  institutionId: varchar("institution_id", { length: 50 }),
   institutionName: varchar("institution_name", { length: 100 }),
   status: bankConnectionStatusEnum("status").default("inactive").notNull(),
   consentExpiresAt: timestamp("consent_expires_at"),

@@ -4,6 +4,13 @@ import { eq } from "drizzle-orm";
 
 const BASIQ_BASE_URL = "https://au-api.basiq.io";
 
+// Probuild PVC business details for CDR consent
+const BUSINESS_DETAILS = {
+  businessName: "Probuild PVC",
+  businessIdNo: "29688327479",
+  organisationType: "COMPANY"
+};
+
 interface BasiqToken {
   accessToken: string;
   expiresAt: number;
@@ -76,150 +83,90 @@ export class BasiqService {
     return response.json();
   }
 
+  /**
+   * Create a CDR consent for Open Banking access
+   * This is the ONLY way to connect to banks like Westpac Business
+   * NO login credentials should ever be collected or sent
+   */
+  async createCDRConsent(): Promise<{ consentId: string; connectUrl: string }> {
+    const redirectUri = process.env.BASIQ_REDIRECT_URI || 
+      `${process.env.REPLIT_DOMAINS?.split(",")[0] ? `https://${process.env.REPLIT_DOMAINS.split(",")[0]}` : "http://localhost:5000"}/api/financial/callback`;
+
+    console.log("Creating CDR consent with redirect URI:", redirectUri);
+
+    const consentPayload = {
+      type: "cdr",
+      permissions: [
+        "ACCOUNT_BASIC_ACCESS",
+        "ACCOUNT_DETAIL",
+        "TRANSACTION_DETAIL"
+      ],
+      businessName: BUSINESS_DETAILS.businessName,
+      businessIdNo: BUSINESS_DETAILS.businessIdNo,
+      organisationType: BUSINESS_DETAILS.organisationType,
+      sharingDuration: 365
+    };
+
+    console.log("CDR consent payload:", JSON.stringify(consentPayload, null, 2));
+
+    const consent = await this.makeRequest("/consents", {
+      method: "POST",
+      body: JSON.stringify(consentPayload)
+    });
+
+    console.log("CDR consent created:", consent);
+
+    const consentId = consent.id;
+    
+    // Generate the Basiq Connect URL for the user to authenticate
+    const connectUrl = `https://connect.basiq.io/consent?consentId=${consentId}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+    return { consentId, connectUrl };
+  }
+
+  /**
+   * Get the status of a consent
+   */
+  async getConsent(consentId: string): Promise<any> {
+    return this.makeRequest(`/consents/${consentId}`);
+  }
+
+  /**
+   * Get accounts associated with a consent
+   */
+  async getAccountsByConsent(consentId: string): Promise<any[]> {
+    const data = await this.makeRequest(`/consents/${consentId}/accounts`);
+    return data.data || [];
+  }
+
+  /**
+   * Get institutions list (for display purposes only)
+   */
   async getInstitutions(): Promise<any[]> {
     const data = await this.makeRequest("/institutions");
     return data.data || [];
   }
 
-  async getInstitutionByName(name: string): Promise<any | null> {
-    const institutions = await this.getInstitutions();
-    const lowerName = name.toLowerCase();
-    
-    return institutions.find((inst: any) => 
-      inst.name?.toLowerCase().includes(lowerName) ||
-      inst.shortName?.toLowerCase().includes(lowerName)
-    ) || null;
-  }
-
-  async createUser(params: {
-    email: string;
-    mobile?: string;
-    firstName?: string;
-    lastName?: string;
-    businessName?: string;
-  }): Promise<any> {
-    // Basiq v3 user creation - businessName is required for business accounts
-    const body: any = { 
-      email: params.email,
-      businessName: params.businessName || "Probuild PVC"
-    };
-    
-    // Add optional mobile in international format (must start with +61 for Australia)
-    if (params.mobile && params.mobile.startsWith("+")) {
-      body.mobile = params.mobile;
-    }
-    
-    // Add name if provided
-    if (params.firstName) {
-      body.firstName = params.firstName;
-    }
-    if (params.lastName) {
-      body.lastName = params.lastName;
-    }
-
-    return this.makeRequest("/users", {
-      method: "POST",
-      body: JSON.stringify(body)
-    });
-  }
-
-  async getUser(userId: string): Promise<any> {
-    return this.makeRequest(`/users/${userId}`);
-  }
-
-  async getClientToken(userId: string): Promise<string> {
-    // Get a CLIENT_ACCESS token bound to a specific user for the consent UI
-    const response = await fetch(`${BASIQ_BASE_URL}/token`, {
-      method: "POST",
-      headers: {
-        "Authorization": `Basic ${this.apiKey}`,
-        "Content-Type": "application/x-www-form-urlencoded",
-        "basiq-version": "3.0"
-      },
-      body: `scope=CLIENT_ACCESS&userId=${userId}`
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to get Basiq client token: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json();
-    return data.access_token;
-  }
-
-  async createConnection(userId: string, institutionId: string, loginId: string, password: string): Promise<any> {
-    return this.makeRequest(`/users/${userId}/connections`, {
-      method: "POST",
-      body: JSON.stringify({
-        loginId,
-        password,
-        institution: { id: institutionId }
-      })
-    });
-  }
-
-  async getJobStatus(jobId: string): Promise<any> {
-    return this.makeRequest(`/jobs/${jobId}`);
-  }
-
-  async pollJobUntilComplete(jobId: string, maxAttempts = 60, intervalMs = 2000): Promise<any> {
-    for (let i = 0; i < maxAttempts; i++) {
-      const job = await this.getJobStatus(jobId);
-      
-      const allComplete = job.steps?.every((step: any) => 
-        step.status === "success" || step.status === "failed"
-      );
-
-      if (allComplete) {
-        const hasFailed = job.steps?.some((step: any) => step.status === "failed");
-        if (hasFailed) {
-          throw new Error(`Job failed: ${JSON.stringify(job.steps)}`);
-        }
-        return job;
-      }
-
-      await new Promise(resolve => setTimeout(resolve, intervalMs));
-    }
-
-    throw new Error("Job timed out");
-  }
-
-  async getAccounts(userId: string): Promise<any[]> {
-    const data = await this.makeRequest(`/users/${userId}/accounts`);
-    return data.data || [];
-  }
-
-  async getAccountById(userId: string, accountId: string): Promise<any> {
-    return this.makeRequest(`/users/${userId}/accounts/${accountId}`);
-  }
-
-  async getTransactions(userId: string, filters?: {
+  /**
+   * Get transactions for a consent
+   */
+  async getTransactionsByConsent(consentId: string, filters?: {
     accountId?: string;
-    connectionId?: string;
     fromDate?: string;
     toDate?: string;
     limit?: number;
   }): Promise<any[]> {
-    let endpoint = `/users/${userId}/transactions`;
-    const filterParts: string[] = [];
+    let endpoint = `/consents/${consentId}/transactions`;
+    const queryParams: string[] = [];
 
     if (filters?.accountId) {
-      filterParts.push(`account.id.eq('${filters.accountId}')`);
-    }
-    if (filters?.connectionId) {
-      filterParts.push(`connection.id.eq('${filters.connectionId}')`);
+      queryParams.push(`filter=account.id.eq('${filters.accountId}')`);
     }
     if (filters?.fromDate) {
-      filterParts.push(`transaction.postDate.gteq('${filters.fromDate}')`);
+      queryParams.push(`filter=transaction.postDate.gteq('${filters.fromDate}')`);
     }
     if (filters?.toDate) {
-      filterParts.push(`transaction.postDate.lteq('${filters.toDate}')`);
-    }
-
-    const queryParams: string[] = [];
-    if (filterParts.length > 0) {
-      queryParams.push(`filter=${filterParts.join(",")}`);
+      queryParams.push(`filter=transaction.postDate.lteq('${filters.toDate}')`);
     }
     if (filters?.limit) {
       queryParams.push(`limit=${filters.limit}`);
@@ -246,21 +193,9 @@ export class BasiqService {
     return allTransactions;
   }
 
-  async refreshConnection(userId: string, connectionId: string): Promise<any> {
-    return this.makeRequest(`/users/${userId}/connections/${connectionId}/refresh`, {
-      method: "POST"
-    });
-  }
-
-  async getConnection(userId: string, connectionId: string): Promise<any> {
-    return this.makeRequest(`/users/${userId}/connections/${connectionId}`);
-  }
-
-  async getConnections(userId: string): Promise<any[]> {
-    const data = await this.makeRequest(`/users/${userId}/connections`);
-    return data.data || [];
-  }
-
+  /**
+   * Sync accounts from Basiq to local database using consent ID
+   */
   async syncAccountsToDatabase(connectionId: string): Promise<void> {
     const connection = await db.select().from(bankConnections)
       .where(eq(bankConnections.id, connectionId))
@@ -270,12 +205,12 @@ export class BasiqService {
       throw new Error(`Connection ${connectionId} not found`);
     }
 
-    const { basiqUserId } = connection[0];
-    if (!basiqUserId) {
-      throw new Error(`Connection ${connectionId} has no Basiq user ID`);
+    const { basiqConsentId } = connection[0];
+    if (!basiqConsentId) {
+      throw new Error(`Connection ${connectionId} has no consent ID`);
     }
 
-    const accounts = await this.getAccounts(basiqUserId);
+    const accounts = await this.getAccountsByConsent(basiqConsentId);
 
     for (const account of accounts) {
       const existingAccount = await db.select().from(bankAccounts)
@@ -307,6 +242,9 @@ export class BasiqService {
     }
   }
 
+  /**
+   * Sync transactions from Basiq to local database
+   */
   async syncTransactionsToDatabase(accountId: string, fromDate?: string): Promise<number> {
     const account = await db.select().from(bankAccounts)
       .where(eq(bankAccounts.id, accountId))
@@ -320,11 +258,11 @@ export class BasiqService {
       .where(eq(bankConnections.id, account[0].connectionId))
       .limit(1);
 
-    if (!connection[0]?.basiqUserId) {
-      throw new Error("Connection has no Basiq user ID");
+    if (!connection[0]?.basiqConsentId) {
+      throw new Error("Connection has no consent ID");
     }
 
-    const transactions = await this.getTransactions(connection[0].basiqUserId, {
+    const transactions = await this.getTransactionsByConsent(connection[0].basiqConsentId, {
       accountId: account[0].basiqAccountId,
       fromDate,
       limit: 500
