@@ -3,9 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { useLocation } from "wouter";
 import {
   Landmark,
   CreditCard,
@@ -18,11 +16,12 @@ import {
   Building2,
   Wallet,
   DollarSign,
-  Clock,
-  Loader2,
   Search,
   Filter,
-  ChevronDown,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,20 +50,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import type { BankAccount, BankConnection, BankTransaction } from "@shared/schema";
 
 interface FinancialOverview {
@@ -77,22 +66,6 @@ interface FinancialOverview {
   recentTransactions: BankTransaction[];
   lastSyncedAt: string | null;
 }
-
-interface Institution {
-  id: string;
-  name: string;
-  shortName?: string;
-  institutionType: string;
-  tier?: number;
-  logo?: { links?: { full?: string } };
-}
-
-const connectionFormSchema = z.object({
-  email: z.string().email("Valid email required"),
-  mobile: z.string().optional(),
-  firstName: z.string().optional(),
-  lastName: z.string().optional(),
-});
 
 function formatCurrency(amount: number | string | null | undefined): string {
   const num = typeof amount === "string" ? parseFloat(amount) : amount;
@@ -157,7 +130,7 @@ function OverviewCard({
   );
 }
 
-function AccountCard({ account, onSync }: { account: BankAccount; onSync: (id: string) => void }) {
+function AccountCard({ account, onSync, isSyncing }: { account: BankAccount; onSync: (id: string) => void; isSyncing?: boolean }) {
   const getAccountIcon = (type: string | null) => {
     switch (type) {
       case "savings": return Wallet;
@@ -208,9 +181,10 @@ function AccountCard({ account, onSync }: { account: BankAccount; onSync: (id: s
             size="sm" 
             variant="ghost" 
             onClick={(e) => { e.stopPropagation(); onSync(account.id); }}
+            disabled={isSyncing}
             data-testid={`button-sync-${account.id}`}
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </CardContent>
@@ -283,6 +257,61 @@ function EmptyState({ type }: { type: "accounts" | "transactions" | "connections
   );
 }
 
+function ConnectionCard({ connection, onRefresh }: { connection: BankConnection; onRefresh: (id: string) => void }) {
+  const statusColors: Record<string, string> = {
+    active: "bg-green-100 text-green-800",
+    processing: "bg-yellow-100 text-yellow-800",
+    inactive: "bg-gray-100 text-gray-800",
+    invalid: "bg-red-100 text-red-800",
+  };
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Building2 className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h4 className="font-medium">{connection.institutionName || "Bank Connection"}</h4>
+              <p className="text-xs text-muted-foreground">
+                {connection.basiqConsentId ? `Consent: ${connection.basiqConsentId.slice(0, 8)}...` : "Pending setup"}
+              </p>
+            </div>
+          </div>
+          <Badge className={statusColors[connection.status || "inactive"]}>
+            {connection.status}
+          </Badge>
+        </div>
+        <div className="mt-4 flex items-center justify-between">
+          <div className="text-xs text-muted-foreground">
+            {connection.lastSyncedAt 
+              ? `Last synced: ${format(new Date(connection.lastSyncedAt), "dd MMM, h:mm a")}`
+              : "Never synced"
+            }
+            {connection.consentExpiresAt && (
+              <span className="ml-2">
+                | Expires: {format(new Date(connection.consentExpiresAt), "dd MMM yyyy")}
+              </span>
+            )}
+          </div>
+          {connection.status === "active" && (
+            <Button 
+              size="sm" 
+              variant="ghost"
+              onClick={() => onRefresh(connection.id)}
+              data-testid={`button-refresh-${connection.id}`}
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Financial() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -290,29 +319,39 @@ export default function Financial() {
   const [searchQuery, setSearchQuery] = useState("");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
   const [showConnectDialog, setShowConnectDialog] = useState(false);
+  const [, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
 
-  const form = useForm<z.infer<typeof connectionFormSchema>>({
-    resolver: zodResolver(connectionFormSchema),
-    defaultValues: {
-      email: "",
-      mobile: "",
-      firstName: "",
-      lastName: "",
-    },
-  });
-
-  // Reset form when dialog opens
+  // Check URL for success/error from Basiq callback
   useEffect(() => {
-    if (showConnectDialog) {
-      form.reset({
-        email: "",
-        mobile: "",
-        firstName: "",
-        lastName: "",
+    const params = new URLSearchParams(window.location.search);
+    const success = params.get("success");
+    const error = params.get("error");
+    const consentId = params.get("consentId");
+
+    if (success === "true") {
+      toast({
+        title: "Bank Connected Successfully",
+        description: consentId 
+          ? "Your bank account has been connected via Open Banking."
+          : "Bank connection was successful.",
       });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/connections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/overview"] });
+      // Clean up URL
+      window.history.replaceState({}, "", "/financial");
+    } else if (error) {
+      toast({
+        title: "Connection Failed",
+        description: error === "callback_failed" 
+          ? "There was an issue completing the bank connection."
+          : error,
+        variant: "destructive",
+      });
+      window.history.replaceState({}, "", "/financial");
     }
-  }, [showConnectDialog, form]);
+  }, [toast]);
 
   const { data: overview, isLoading: overviewLoading } = useQuery<FinancialOverview>({
     queryKey: ["/api/financial/overview"],
@@ -322,7 +361,7 @@ export default function Financial() {
     queryKey: ["/api/financial/accounts"],
   });
 
-  const { data: connections = [] } = useQuery<BankConnection[]>({
+  const { data: connections = [], isLoading: connectionsLoading } = useQuery<BankConnection[]>({
     queryKey: ["/api/financial/connections"],
     enabled: isAdmin,
   });
@@ -335,7 +374,7 @@ export default function Financial() {
     mutationFn: async (accountId: string) => {
       return apiRequest("POST", `/api/financial/accounts/${accountId}/sync`, {});
     },
-    onSuccess: (_, accountId) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] });
       queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/financial/overview"] });
@@ -344,67 +383,60 @@ export default function Financial() {
     onError: (error: any) => {
       toast({ 
         title: "Sync Failed", 
-        description: error.message || "Failed to sync transactions. Please try again.",
+        description: error.message || "Failed to sync transactions.",
         variant: "destructive" 
       });
     },
   });
 
-  const connectMutation = useMutation({
-    mutationFn: async (data: z.infer<typeof connectionFormSchema>) => {
-      const response = await apiRequest("POST", "/api/financial/connections", {
-        email: data.email,
-        mobile: data.mobile || undefined,
-        firstName: data.firstName || undefined,
-        lastName: data.lastName || undefined,
+  const refreshMutation = useMutation({
+    mutationFn: async (connectionId: string) => {
+      return apiRequest("POST", `/api/financial/connections/${connectionId}/refresh`, {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/connections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/accounts"] });
+      toast({ title: "Connection Refreshed", description: "Account data has been updated." });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Refresh Failed", 
+        description: error.message || "Failed to refresh connection.",
+        variant: "destructive" 
       });
-      return response;
+    },
+  });
+
+  // CDR Consent Flow - Create consent and redirect to Basiq Connect
+  const connectBankMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/financial/connect-bank", {});
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/financial/connections"] });
       setShowConnectDialog(false);
-      form.reset();
       
-      // Redirect to Basiq Consent UI if we have a consent URL
-      if (data.consentUrl) {
+      if (data.connectUrl) {
         toast({ 
-          title: "Redirecting to Bank Connection", 
-          description: "Opening secure portal to connect your bank..." 
+          title: "Opening Bank Connection", 
+          description: "You will be redirected to your bank's secure login to authorize access." 
         });
-        window.open(data.consentUrl, "_blank");
+        // Open in same window to allow redirect back
+        window.location.href = data.connectUrl;
       } else {
         toast({ 
-          title: "Bank Connection Initiated", 
-          description: "Your bank is being connected. This may take a few moments." 
+          title: "Connection Started", 
+          description: "Bank connection process has begun.",
+          variant: "destructive"
         });
       }
     },
     onError: (error: any) => {
       toast({ 
         title: "Connection Failed", 
-        description: error.message || "Failed to start bank connection. Please try again.",
+        description: error.message || "Failed to start bank connection.",
         variant: "destructive" 
       });
     },
-  });
-
-  const onConnectSubmit = (data: z.infer<typeof connectionFormSchema>) => {
-    connectMutation.mutate(data);
-  };
-
-  const filteredTransactions = transactions.filter(tx => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      const matches = 
-        tx.description?.toLowerCase().includes(query) ||
-        tx.merchantName?.toLowerCase().includes(query) ||
-        tx.category?.toLowerCase().includes(query);
-      if (!matches) return false;
-    }
-    if (directionFilter !== "all" && tx.direction !== directionFilter) {
-      return false;
-    }
-    return true;
   });
 
   return (
@@ -425,7 +457,7 @@ export default function Financial() {
             onClick={() => setShowConnectDialog(true)}
           >
             <Plus className="h-4 w-4 mr-2" />
-            Connect Bank
+            Connect Bank Account
           </Button>
         )}
       </div>
@@ -572,6 +604,7 @@ export default function Financial() {
                   key={account.id} 
                   account={account} 
                   onSync={(id) => syncMutation.mutate(id)}
+                  isSyncing={syncMutation.isPending}
                 />
               ))}
             </div>
@@ -624,11 +657,11 @@ export default function Financial() {
                         <Skeleton className="h-4 w-40 mb-1" />
                         <Skeleton className="h-3 w-24" />
                       </div>
-                      <Skeleton className="h-5 w-24" />
+                      <Skeleton className="h-5 w-20" />
                     </div>
                   ))}
                 </div>
-              ) : filteredTransactions.length > 0 ? (
+              ) : transactions.length > 0 ? (
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -639,7 +672,7 @@ export default function Financial() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredTransactions.map((tx) => (
+                    {transactions.map((tx) => (
                       <TransactionRow key={tx.id} transaction={tx} />
                     ))}
                   </TableBody>
@@ -653,73 +686,49 @@ export default function Financial() {
 
         {isAdmin && (
           <TabsContent value="connections" className="mt-6 space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Bank Connections</CardTitle>
-                <CardDescription>
-                  Manage your Open Banking connections. Connections require periodic re-authentication.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {connections.length > 0 ? (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Institution</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Last Synced</TableHead>
-                        <TableHead>Created</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {connections.map((conn) => (
-                        <TableRow key={conn.id} data-testid={`connection-row-${conn.id}`}>
-                          <TableCell>
-                            <div className="flex items-center gap-3">
-                              <div className="h-9 w-9 rounded bg-primary/10 flex items-center justify-center">
-                                <Building2 className="h-4 w-4 text-primary" />
-                              </div>
-                              <div>
-                                <p className="font-medium">{conn.institutionName || conn.institutionId}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  ID: {conn.basiqConnectionId?.slice(0, 8) || "Pending"}...
-                                </p>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={conn.status === "active" ? "default" : "secondary"}
-                              data-testid={`connection-status-${conn.id}`}
-                            >
-                              {conn.status}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {conn.lastSyncedAt ? format(new Date(conn.lastSyncedAt), "dd MMM yyyy, h:mm a") : "Never"}
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {format(new Date(conn.createdAt), "dd MMM yyyy")}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <Button size="sm" variant="ghost">
-                              <RefreshCw className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                ) : (
+            <Alert>
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Secure Open Banking</AlertTitle>
+              <AlertDescription>
+                Bank connections use CDR (Consumer Data Right) Open Banking. Your credentials are never stored in this system - 
+                you authenticate directly with your bank via their secure login.
+              </AlertDescription>
+            </Alert>
+
+            {connectionsLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {[1, 2].map(i => (
+                  <Skeleton key={i} className="h-32 rounded-lg" />
+                ))}
+              </div>
+            ) : connections.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {connections.map(connection => (
+                  <ConnectionCard 
+                    key={connection.id} 
+                    connection={connection}
+                    onRefresh={(id) => refreshMutation.mutate(id)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="pt-6">
                   <EmptyState type="connections" />
-                )}
-              </CardContent>
-            </Card>
+                  <div className="flex justify-center mt-4">
+                    <Button onClick={() => setShowConnectDialog(true)}>
+                      <Plus className="h-4 w-4 mr-2" />
+                      Connect Your First Bank
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         )}
       </Tabs>
 
+      {/* Connect Bank Dialog - Simple CDR Consent Flow */}
       <Dialog open={showConnectDialog} onOpenChange={setShowConnectDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -728,85 +737,67 @@ export default function Financial() {
               Connect Bank Account
             </DialogTitle>
             <DialogDescription>
-              Enter your email to start the secure bank connection process. You'll be redirected to Basiq's secure portal to complete the connection.
+              Securely connect your Westpac Business account using Open Banking
             </DialogDescription>
           </DialogHeader>
-          
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onConnectSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email Address</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        placeholder="admin@probuildpvc.com.au"
-                        {...field}
-                        data-testid="input-email"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Used to identify your bank connection
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
 
-              <FormField
-                control={form.control}
-                name="mobile"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Mobile Number (Optional)</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="+61400000000"
-                        {...field}
-                        data-testid="input-mobile"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Australian format: +61XXXXXXXXX
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <div className="space-y-4 py-4">
+            <Alert>
+              <CheckCircle2 className="h-4 w-4 text-green-600" />
+              <AlertTitle>Secure CDR Open Banking</AlertTitle>
+              <AlertDescription className="text-sm">
+                You will be redirected to your bank&apos;s secure login page to authorize access. 
+                Your credentials are never shared with us.
+              </AlertDescription>
+            </Alert>
 
-              <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
-                <p className="font-medium text-foreground mb-1">Secure Connection Process:</p>
-                <ol className="list-decimal list-inside space-y-1">
-                  <li>Click "Start Connection" below</li>
-                  <li>You'll be redirected to Basiq's secure portal</li>
-                  <li>Select your bank and enter your credentials there</li>
-                  <li>Return here to see your connected accounts</li>
-                </ol>
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <p className="text-sm font-medium">Business Details</p>
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p><strong>Business Name:</strong> Probuild PVC</p>
+                <p><strong>ABN:</strong> 29 688 327 479</p>
               </div>
+            </div>
 
-              <DialogFooter className="gap-2">
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  onClick={() => setShowConnectDialog(false)}
-                  data-testid="button-cancel-connect"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  type="submit" 
-                  disabled={connectMutation.isPending}
-                  data-testid="button-submit-connect"
-                >
-                  {connectMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Start Connection
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
+            <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+              <p className="text-sm font-medium">Data Access Requested</p>
+              <ul className="text-sm text-muted-foreground list-disc list-inside space-y-1">
+                <li>Account details and balances</li>
+                <li>Transaction history</li>
+              </ul>
+              <p className="text-xs text-muted-foreground mt-2">
+                Access is valid for 365 days and can be revoked at any time.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setShowConnectDialog(false)}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => connectBankMutation.mutate()}
+              disabled={connectBankMutation.isPending}
+              className="w-full sm:w-auto"
+              data-testid="button-start-connection"
+            >
+              {connectBankMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Connect to Bank
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

@@ -5451,12 +5451,13 @@ export async function registerRoutes(
       
       const importedCount = await basiq.syncTransactionsToDatabase(req.params.id, fromDate);
       
-      // Update account balance
+      // Update account balance using consent-based account fetch
       const account = await storage.getBankAccountById(req.params.id);
       if (account) {
         const connection = await storage.getBankConnectionById(account.connectionId);
-        if (connection?.basiqUserId) {
-          const accounts = await basiq.getAccounts(connection.basiqUserId);
+        if (connection?.basiqConsentId) {
+          // Use consent-based account fetch
+          const accounts = await basiq.getAccountsByConsent(connection.basiqConsentId);
           const basiqAccount = accounts.find((a: any) => a.id === account.basiqAccountId);
           if (basiqAccount) {
             await storage.updateBankAccount(account.id, {
