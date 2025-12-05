@@ -120,22 +120,27 @@ export class BasiqService {
 
   /**
    * Create a Basiq user (required before consent)
-   * Requires at least email or mobile to be provided or in environment
+   * Requires email or mobile + businessName
    */
-  async createUser(email?: string, mobile?: string): Promise<string> {
-    console.log("Creating Basiq user");
+  async createUser(businessName?: string, email?: string, mobile?: string): Promise<string> {
+    console.log("Creating Basiq user for business:", businessName || BUSINESS_DETAILS.businessName);
     
     // Use provided values or fall back to environment variables
     const contactEmail = email || process.env.BASIQ_CONTACT_EMAIL;
     const contactMobile = mobile || process.env.BASIQ_CONTACT_MOBILE;
+    const contactBusinessName = businessName || BUSINESS_DETAILS.businessName;
     
     if (!contactEmail && !contactMobile) {
       throw new Error("Basiq user creation requires either email or mobile. Set BASIQ_CONTACT_EMAIL or BASIQ_CONTACT_MOBILE environment variables.");
     }
     
-    const userData: any = {};
+    const userData: any = {
+      businessName: contactBusinessName
+    };
     if (contactEmail) userData.email = contactEmail;
     if (contactMobile) userData.mobile = contactMobile;
+    
+    console.log("User data payload:", userData);
     
     const user = await this.makeRequest("/users", {
       method: "POST",
@@ -155,10 +160,11 @@ export class BasiqService {
    */
   async createCDRConsent(businessName?: string, businessIdNo?: string): Promise<{ userId: string; connectUrl: string }> {
     console.log("Starting CDR consent flow...");
-    console.log("Business:", businessName || BUSINESS_DETAILS.businessName);
+    const finalBusinessName = businessName || BUSINESS_DETAILS.businessName;
+    console.log("Business:", finalBusinessName);
     
-    // Step 1: Create a Basiq user (email/mobile optional for business accounts)
-    const userId = await this.createUser();
+    // Step 1: Create a Basiq user with business name and contact email
+    const userId = await this.createUser(finalBusinessName);
     console.log("Created Basiq user:", userId);
     
     // Step 2: Get a CLIENT_ACCESS token bound to this user
