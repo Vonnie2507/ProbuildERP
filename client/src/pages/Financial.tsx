@@ -322,6 +322,7 @@ export default function Financial() {
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [businessName, setBusinessName] = useState("");
   const [businessIdNo, setBusinessIdNo] = useState("");
+  const [businessIdNoType, setBusinessIdNoType] = useState("");
   const [organisationType, setOrganisationType] = useState("");
   const [sharingDuration, setSharingDuration] = useState("");
   const [email, setEmail] = useState("");
@@ -419,6 +420,7 @@ export default function Financial() {
       return apiRequest("POST", "/api/financial/connect-bank", {
         businessName,
         businessIdNo,
+        businessIdNoType,
         organisationType,
         sharingDuration: parseInt(sharingDuration) || 365,
         email
@@ -428,6 +430,7 @@ export default function Financial() {
       setShowConnectDialog(false);
       setBusinessName("");
       setBusinessIdNo("");
+      setBusinessIdNoType("");
       setOrganisationType("");
       setSharingDuration("");
       setEmail("");
@@ -792,6 +795,17 @@ export default function Financial() {
               </div>
 
               <div>
+                <Label htmlFor="businessIdNoType" className="text-sm font-medium">Business ID Type</Label>
+                <Input 
+                  id="businessIdNoType"
+                  placeholder="e.g., ABN" 
+                  value={businessIdNoType}
+                  onChange={(e) => setBusinessIdNoType(e.target.value)}
+                  data-testid="input-business-id-type"
+                />
+              </div>
+
+              <div>
                 <Label htmlFor="organisationType" className="text-sm font-medium">Organisation Type</Label>
                 <Input 
                   id="organisationType"
@@ -846,6 +860,7 @@ export default function Financial() {
                 setShowConnectDialog(false);
                 setBusinessName("");
                 setBusinessIdNo("");
+                setBusinessIdNoType("");
                 setOrganisationType("");
                 setSharingDuration("");
                 setEmail("");
@@ -857,7 +872,7 @@ export default function Financial() {
             </Button>
             <Button 
               onClick={() => connectBankMutation.mutate()}
-              disabled={connectBankMutation.isPending || !businessName || !businessIdNo || !organisationType || !sharingDuration || !email}
+              disabled={connectBankMutation.isPending || !businessName || !businessIdNo || !businessIdNoType || !organisationType || !sharingDuration || !email}
               className="w-full sm:w-auto"
               data-testid="button-start-connection"
             >
