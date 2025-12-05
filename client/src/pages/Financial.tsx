@@ -323,6 +323,7 @@ export default function Financial() {
   const [businessName, setBusinessName] = useState("");
   const [businessIdNo, setBusinessIdNo] = useState("");
   const [businessIdNoType, setBusinessIdNoType] = useState("");
+  const [businessAddress, setBusinessAddress] = useState("");
   const [organisationType, setOrganisationType] = useState("");
   const [sharingDuration, setSharingDuration] = useState("");
   const [email, setEmail] = useState("");
@@ -421,6 +422,7 @@ export default function Financial() {
         businessName,
         businessIdNo,
         businessIdNoType,
+        businessAddress,
         organisationType,
         sharingDuration: parseInt(sharingDuration) || 365,
         email
@@ -431,6 +433,7 @@ export default function Financial() {
       setBusinessName("");
       setBusinessIdNo("");
       setBusinessIdNoType("");
+      setBusinessAddress("");
       setOrganisationType("");
       setSharingDuration("");
       setEmail("");
@@ -806,6 +809,17 @@ export default function Financial() {
               </div>
 
               <div>
+                <Label htmlFor="businessAddress" className="text-sm font-medium">Business Address</Label>
+                <Input 
+                  id="businessAddress"
+                  placeholder="e.g., 123 Main Street, Perth WA 6000" 
+                  value={businessAddress}
+                  onChange={(e) => setBusinessAddress(e.target.value)}
+                  data-testid="input-business-address"
+                />
+              </div>
+
+              <div>
                 <Label htmlFor="organisationType" className="text-sm font-medium">Organisation Type</Label>
                 <Input 
                   id="organisationType"
@@ -861,6 +875,7 @@ export default function Financial() {
                 setBusinessName("");
                 setBusinessIdNo("");
                 setBusinessIdNoType("");
+                setBusinessAddress("");
                 setOrganisationType("");
                 setSharingDuration("");
                 setEmail("");
@@ -872,7 +887,7 @@ export default function Financial() {
             </Button>
             <Button 
               onClick={() => connectBankMutation.mutate()}
-              disabled={connectBankMutation.isPending || !businessName || !businessIdNo || !businessIdNoType || !organisationType || !sharingDuration || !email}
+              disabled={connectBankMutation.isPending || !businessName || !businessIdNo || !businessIdNoType || !businessAddress || !organisationType || !sharingDuration || !email}
               className="w-full sm:w-auto"
               data-testid="button-start-connection"
             >

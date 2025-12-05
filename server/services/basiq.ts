@@ -129,7 +129,8 @@ export class BasiqService {
     mobile?: string,
     organisationType?: string,
     sharingDuration?: number,
-    businessIdNoType?: string
+    businessIdNoType?: string,
+    businessAddress?: string
   ): Promise<string> {
     console.log("Creating Basiq user for business:", businessName || BUSINESS_DETAILS.businessName);
     
@@ -141,6 +142,7 @@ export class BasiqService {
     const contactOrgType = organisationType || BUSINESS_DETAILS.organisationType;
     const contactSharingDuration = sharingDuration || 365;
     const contactBusinessIdNoType = businessIdNoType || "ABN";
+    const contactBusinessAddress = businessAddress || "";
     
     if (!contactEmail && !contactMobile) {
       throw new Error("Basiq user creation requires either email or mobile. Set BASIQ_CONTACT_EMAIL or BASIQ_CONTACT_MOBILE environment variables.");
@@ -150,6 +152,7 @@ export class BasiqService {
       businessName: contactBusinessName,
       businessIdNo: contactBusinessIdNo,
       businessIdNoType: contactBusinessIdNoType,
+      businessAddress: contactBusinessAddress,
       organisationType: contactOrgType,
       sharingDuration: contactSharingDuration
     };
@@ -178,6 +181,7 @@ export class BasiqService {
     businessName?: string,
     businessIdNo?: string,
     businessIdNoType?: string,
+    businessAddress?: string,
     organisationType?: string,
     sharingDuration?: number,
     email?: string
@@ -186,6 +190,7 @@ export class BasiqService {
       businessName,
       businessIdNo,
       businessIdNoType,
+      businessAddress,
       organisationType,
       sharingDuration,
       email
@@ -194,12 +199,13 @@ export class BasiqService {
     const finalBusinessName = businessName || BUSINESS_DETAILS.businessName;
     const finalBusinessIdNo = businessIdNo || BUSINESS_DETAILS.businessIdNo;
     const finalBusinessIdNoType = businessIdNoType || "ABN";
+    const finalBusinessAddress = businessAddress || "";
     const finalEmail = email || process.env.BASIQ_CONTACT_EMAIL;
     const finalOrgType = organisationType || BUSINESS_DETAILS.organisationType;
     const finalSharingDuration = sharingDuration || 365;
     
     // Step 1: Create a Basiq user with business name, ID, contact email, org type, and sharing duration
-    const userId = await this.createUser(finalBusinessName, finalBusinessIdNo, finalEmail, undefined, finalOrgType, finalSharingDuration, finalBusinessIdNoType);
+    const userId = await this.createUser(finalBusinessName, finalBusinessIdNo, finalEmail, undefined, finalOrgType, finalSharingDuration, finalBusinessIdNoType, finalBusinessAddress);
     console.log("Created Basiq user:", userId);
     
     // Step 2: Get a CLIENT_ACCESS token bound to this user
