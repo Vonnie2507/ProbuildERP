@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import type { User } from "@shared/schema";
+import { startAutomationProcessor } from "./automation";
 
 const app = express();
 const httpServer = createServer(app);
@@ -125,6 +126,8 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      
+      startAutomationProcessor(5);
     },
   );
 })();
