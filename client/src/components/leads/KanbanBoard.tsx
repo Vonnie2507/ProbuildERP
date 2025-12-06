@@ -32,6 +32,8 @@ interface Lead {
   };
   createdAt: string;
   quoteInfo?: QuoteInfo;
+  soilWarning?: string | null;
+  soilInstallNotes?: string | null;
 }
 
 interface KanbanColumn {
