@@ -125,6 +125,7 @@ const navigationConfig: NavGroup[] = [
     label: "Settings",
     items: [
       { title: "Dashboard Builder", url: "/dashboard-builder", icon: LayoutDashboard },
+      { title: "Job Stage Config", url: "/job-stage-configuration", icon: GitBranch },
     ],
   },
 ];

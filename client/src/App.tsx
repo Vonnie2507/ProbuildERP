@@ -40,6 +40,7 @@ import Import from "@/pages/Import";
 import Unauthorized from "@/pages/Unauthorized";
 import DashboardBuilder from "@/pages/DashboardBuilder";
 import Financial from "@/pages/Financial";
+import JobStageConfiguration from "@/pages/JobStageConfiguration";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -409,6 +410,13 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/dashboard-builder">
           <MainLayout>
             <DashboardBuilder />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/job-stage-configuration">
+        <ProtectedRoute path="/job-stage-configuration">
+          <MainLayout>
+            <JobStageConfiguration />
           </MainLayout>
         </ProtectedRoute>
       </Route>

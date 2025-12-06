@@ -49,6 +49,14 @@ The system employs a modern web architecture with a clear separation of concerns
 -   **Analytics & Automation:** Incorporates Quote Analytics Dashboard and configurable Automation Campaigns for SMS, triggered by various business events.
 -   **Internal Management:** Features an "Organisation Hub" for managing departments, workflows, policies, resources, and a knowledge base.
 -   **P&L Calculator:** Provides a staff-only comprehensive job costing and profit/loss analysis tool.
+-   **Job Stage Configuration:** Admin-only feature for managing job pipelines and stages:
+    -   Located at `/job-stage-configuration` (admin access only via Settings)
+    -   Create, edit, and delete job pipelines (e.g., Supply Only, Supply + Install)
+    -   Add, edit, delete, and reorder stages within each pipeline
+    -   Configure stage properties: name, icon (Lucide icon name), completion type (manual/automatic), active status
+    -   Database tables: job_pipelines (workflow definitions), job_pipeline_stages (stage definitions with sortOrder)
+    -   API routes: /api/job-pipelines, /api/job-pipelines/:id/stages, /api/job-pipeline-stages/:id, /api/job-pipelines/:id/stages/reorder
+    -   Pipelines are configured independently before being applied to job types (future enhancement)
 -   **Dashboard Builder:** Admin-only feature for configuring role-specific dashboards:
     -   Located at `/dashboard-builder` (admin access only)
     -   Create, edit, and delete dashboard layouts per role

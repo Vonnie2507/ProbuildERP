@@ -5607,5 +5607,175 @@ export async function registerRoutes(
     }
   });
 
+  // ==========================================
+  // JOB PIPELINE CONFIGURATION
+  // ==========================================
+
+  // Get all job pipelines
+  app.get("/api/job-pipelines", async (req, res) => {
+    try {
+      const pipelines = await storage.getJobPipelines();
+      res.json(pipelines);
+    } catch (error) {
+      console.error("Error fetching job pipelines:", error);
+      res.status(500).json({ error: "Failed to fetch job pipelines" });
+    }
+  });
+
+  // Get a single job pipeline with stages
+  app.get("/api/job-pipelines/:id", async (req, res) => {
+    try {
+      const pipeline = await storage.getJobPipeline(req.params.id);
+      if (!pipeline) {
+        return res.status(404).json({ error: "Pipeline not found" });
+      }
+      const stages = await storage.getJobPipelineStages(req.params.id);
+      res.json({ ...pipeline, stages });
+    } catch (error) {
+      console.error("Error fetching job pipeline:", error);
+      res.status(500).json({ error: "Failed to fetch job pipeline" });
+    }
+  });
+
+  // Create a new job pipeline
+  app.post("/api/job-pipelines", requireRoles("admin"), async (req, res) => {
+    try {
+      const { name, description, isActive } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: "Name is required" });
+      }
+      const pipeline = await storage.createJobPipeline({
+        name,
+        description: description || null,
+        isActive: isActive !== false
+      });
+      res.status(201).json(pipeline);
+    } catch (error) {
+      console.error("Error creating job pipeline:", error);
+      res.status(500).json({ error: "Failed to create job pipeline" });
+    }
+  });
+
+  // Update a job pipeline
+  app.patch("/api/job-pipelines/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { name, description, isActive } = req.body;
+      const pipeline = await storage.updateJobPipeline(req.params.id, {
+        name,
+        description,
+        isActive
+      });
+      if (!pipeline) {
+        return res.status(404).json({ error: "Pipeline not found" });
+      }
+      res.json(pipeline);
+    } catch (error) {
+      console.error("Error updating job pipeline:", error);
+      res.status(500).json({ error: "Failed to update job pipeline" });
+    }
+  });
+
+  // Delete a job pipeline
+  app.delete("/api/job-pipelines/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      await storage.deleteJobPipeline(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting job pipeline:", error);
+      res.status(500).json({ error: "Failed to delete job pipeline" });
+    }
+  });
+
+  // Get stages for a pipeline
+  app.get("/api/job-pipelines/:pipelineId/stages", async (req, res) => {
+    try {
+      const stages = await storage.getJobPipelineStages(req.params.pipelineId);
+      res.json(stages);
+    } catch (error) {
+      console.error("Error fetching pipeline stages:", error);
+      res.status(500).json({ error: "Failed to fetch pipeline stages" });
+    }
+  });
+
+  // Create a new stage
+  app.post("/api/job-pipelines/:pipelineId/stages", requireRoles("admin"), async (req, res) => {
+    try {
+      const { name, icon, completionType, isActive, sortOrder } = req.body;
+      if (!name) {
+        return res.status(400).json({ error: "Name is required" });
+      }
+      
+      // Get current max sort order if not provided
+      let order = sortOrder;
+      if (order === undefined) {
+        const existingStages = await storage.getJobPipelineStages(req.params.pipelineId);
+        order = existingStages.length > 0 
+          ? Math.max(...existingStages.map(s => s.sortOrder)) + 1 
+          : 0;
+      }
+      
+      const stage = await storage.createJobPipelineStage({
+        pipelineId: req.params.pipelineId,
+        name,
+        icon: icon || null,
+        completionType: completionType || "manual",
+        isActive: isActive !== false,
+        sortOrder: order
+      });
+      res.status(201).json(stage);
+    } catch (error) {
+      console.error("Error creating pipeline stage:", error);
+      res.status(500).json({ error: "Failed to create pipeline stage" });
+    }
+  });
+
+  // Update a stage
+  app.patch("/api/job-pipeline-stages/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { name, icon, completionType, isActive, sortOrder } = req.body;
+      const stage = await storage.updateJobPipelineStage(req.params.id, {
+        name,
+        icon,
+        completionType,
+        isActive,
+        sortOrder
+      });
+      if (!stage) {
+        return res.status(404).json({ error: "Stage not found" });
+      }
+      res.json(stage);
+    } catch (error) {
+      console.error("Error updating pipeline stage:", error);
+      res.status(500).json({ error: "Failed to update pipeline stage" });
+    }
+  });
+
+  // Delete a stage
+  app.delete("/api/job-pipeline-stages/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      await storage.deleteJobPipelineStage(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting pipeline stage:", error);
+      res.status(500).json({ error: "Failed to delete pipeline stage" });
+    }
+  });
+
+  // Reorder stages
+  app.post("/api/job-pipelines/:pipelineId/stages/reorder", requireRoles("admin"), async (req, res) => {
+    try {
+      const { stageIds } = req.body;
+      if (!Array.isArray(stageIds)) {
+        return res.status(400).json({ error: "stageIds must be an array" });
+      }
+      await storage.reorderJobPipelineStages(req.params.pipelineId, stageIds);
+      const stages = await storage.getJobPipelineStages(req.params.pipelineId);
+      res.json(stages);
+    } catch (error) {
+      console.error("Error reordering stages:", error);
+      res.status(500).json({ error: "Failed to reorder stages" });
+    }
+  });
+
   return httpServer;
 }

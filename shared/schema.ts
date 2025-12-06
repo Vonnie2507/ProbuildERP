@@ -2062,3 +2062,54 @@ export type BankAccount = typeof bankAccounts.$inferSelect;
 
 export type InsertBankTransaction = z.infer<typeof insertBankTransactionSchema>;
 export type BankTransaction = typeof bankTransactions.$inferSelect;
+
+// ==================== JOB PIPELINE CONFIGURATION ====================
+
+// Job Pipelines - represents different job workflow types
+export const jobPipelines = pgTable("job_pipelines", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: varchar("name", { length: 100 }).notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Stage completion type enum
+export const stageCompletionTypeEnum = pgEnum("stage_completion_type", [
+  "manual",
+  "automatic"
+]);
+
+// Job Pipeline Stages - individual steps within a pipeline
+export const jobPipelineStages = pgTable("job_pipeline_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pipelineId: varchar("pipeline_id").notNull().references(() => jobPipelines.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 100 }).notNull(),
+  icon: varchar("icon", { length: 50 }),
+  completionType: stageCompletionTypeEnum("completion_type").default("manual").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Insert schemas for pipelines
+export const insertJobPipelineSchema = createInsertSchema(jobPipelines).omit({ 
+  id: true, 
+  createdAt: true,
+  updatedAt: true
+});
+
+export const insertJobPipelineStageSchema = createInsertSchema(jobPipelineStages).omit({ 
+  id: true, 
+  createdAt: true,
+  updatedAt: true
+});
+
+// Types for pipelines
+export type InsertJobPipeline = z.infer<typeof insertJobPipelineSchema>;
+export type JobPipeline = typeof jobPipelines.$inferSelect;
+
+export type InsertJobPipelineStage = z.infer<typeof insertJobPipelineStageSchema>;
+export type JobPipelineStage = typeof jobPipelineStages.$inferSelect;

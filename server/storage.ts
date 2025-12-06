@@ -12,6 +12,7 @@ import {
   jobSetupDocuments, jobSetupProducts, liveDocumentTemplates,
   leadActivities, leadTasks, staffLeaveBalances,
   bankConnections, bankAccounts, bankTransactions,
+  jobPipelines, jobPipelineStages,
   type User, type InsertUser,
   type StaffLeaveBalance, type InsertStaffLeaveBalance,
   type Client, type InsertClient,
@@ -65,6 +66,8 @@ import {
   type BankConnection, type InsertBankConnection,
   type BankAccount, type InsertBankAccount,
   type BankTransaction, type InsertBankTransaction,
+  type JobPipeline, type InsertJobPipeline,
+  type JobPipelineStage, type InsertJobPipelineStage,
   dashboardWidgets, roleDashboardLayouts, dashboardWidgetInstances,
 } from "@shared/schema";
 
@@ -522,6 +525,26 @@ export interface IStorage {
   getBankTransactionById(id: string): Promise<BankTransaction | undefined>;
   createBankTransaction(transaction: InsertBankTransaction): Promise<BankTransaction>;
   createBankTransactions(transactions: InsertBankTransaction[]): Promise<BankTransaction[]>;
+
+  // ============================================
+  // JOB PIPELINE CONFIGURATION
+  // ============================================
+
+  // Job Pipelines
+  getJobPipeline(id: string): Promise<JobPipeline | undefined>;
+  getJobPipelines(): Promise<JobPipeline[]>;
+  getActiveJobPipelines(): Promise<JobPipeline[]>;
+  createJobPipeline(pipeline: InsertJobPipeline): Promise<JobPipeline>;
+  updateJobPipeline(id: string, pipeline: Partial<InsertJobPipeline>): Promise<JobPipeline | undefined>;
+  deleteJobPipeline(id: string): Promise<boolean>;
+
+  // Job Pipeline Stages
+  getJobPipelineStage(id: string): Promise<JobPipelineStage | undefined>;
+  getJobPipelineStages(pipelineId: string): Promise<JobPipelineStage[]>;
+  createJobPipelineStage(stage: InsertJobPipelineStage): Promise<JobPipelineStage>;
+  updateJobPipelineStage(id: string, stage: Partial<InsertJobPipelineStage>): Promise<JobPipelineStage | undefined>;
+  deleteJobPipelineStage(id: string): Promise<boolean>;
+  reorderJobPipelineStages(pipelineId: string, stageIds: string[]): Promise<boolean>;
 }
 
 export interface TransactionFilters {
@@ -3098,6 +3121,86 @@ export class DatabaseStorage implements IStorage {
     if (transactions.length === 0) return [];
     const result = await db.insert(bankTransactions).values(transactions).returning();
     return result;
+  }
+
+  // ============================================
+  // JOB PIPELINE CONFIGURATION
+  // ============================================
+
+  // Job Pipelines
+  async getJobPipeline(id: string): Promise<JobPipeline | undefined> {
+    const [pipeline] = await db.select().from(jobPipelines).where(eq(jobPipelines.id, id));
+    return pipeline;
+  }
+
+  async getJobPipelines(): Promise<JobPipeline[]> {
+    return db.select().from(jobPipelines).orderBy(jobPipelines.name);
+  }
+
+  async getActiveJobPipelines(): Promise<JobPipeline[]> {
+    return db.select().from(jobPipelines)
+      .where(eq(jobPipelines.isActive, true))
+      .orderBy(jobPipelines.name);
+  }
+
+  async createJobPipeline(pipeline: InsertJobPipeline): Promise<JobPipeline> {
+    const [created] = await db.insert(jobPipelines).values(pipeline).returning();
+    return created;
+  }
+
+  async updateJobPipeline(id: string, pipeline: Partial<InsertJobPipeline>): Promise<JobPipeline | undefined> {
+    const [updated] = await db.update(jobPipelines)
+      .set({ ...pipeline, updatedAt: new Date() })
+      .where(eq(jobPipelines.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteJobPipeline(id: string): Promise<boolean> {
+    const result = await db.delete(jobPipelines).where(eq(jobPipelines.id, id));
+    return true;
+  }
+
+  // Job Pipeline Stages
+  async getJobPipelineStage(id: string): Promise<JobPipelineStage | undefined> {
+    const [stage] = await db.select().from(jobPipelineStages).where(eq(jobPipelineStages.id, id));
+    return stage;
+  }
+
+  async getJobPipelineStages(pipelineId: string): Promise<JobPipelineStage[]> {
+    return db.select().from(jobPipelineStages)
+      .where(eq(jobPipelineStages.pipelineId, pipelineId))
+      .orderBy(jobPipelineStages.sortOrder);
+  }
+
+  async createJobPipelineStage(stage: InsertJobPipelineStage): Promise<JobPipelineStage> {
+    const [created] = await db.insert(jobPipelineStages).values(stage).returning();
+    return created;
+  }
+
+  async updateJobPipelineStage(id: string, stage: Partial<InsertJobPipelineStage>): Promise<JobPipelineStage | undefined> {
+    const [updated] = await db.update(jobPipelineStages)
+      .set({ ...stage, updatedAt: new Date() })
+      .where(eq(jobPipelineStages.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteJobPipelineStage(id: string): Promise<boolean> {
+    await db.delete(jobPipelineStages).where(eq(jobPipelineStages.id, id));
+    return true;
+  }
+
+  async reorderJobPipelineStages(pipelineId: string, stageIds: string[]): Promise<boolean> {
+    for (let i = 0; i < stageIds.length; i++) {
+      await db.update(jobPipelineStages)
+        .set({ sortOrder: i, updatedAt: new Date() })
+        .where(and(
+          eq(jobPipelineStages.id, stageIds[i]),
+          eq(jobPipelineStages.pipelineId, pipelineId)
+        ));
+    }
+    return true;
   }
 }
 

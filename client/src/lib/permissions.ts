@@ -40,6 +40,7 @@ export const routePermissions: RouteConfig[] = [
   { path: "/live-doc-templates", allowedRoles: allInternalRoles },
   { path: "/import", allowedRoles: ["admin"] },
   { path: "/dashboard-builder", allowedRoles: ["admin"] },
+  { path: "/job-stage-configuration", allowedRoles: ["admin"] },
   { path: "/unauthorized", allowedRoles: allInternalRoles },
 ];
 
