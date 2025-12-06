@@ -2204,3 +2204,26 @@ export const insertJobStatusDependencySchema = createInsertSchema(jobStatusDepen
 
 export type InsertJobStatusDependency = z.infer<typeof insertJobStatusDependencySchema>;
 export type JobStatusDependency = typeof jobStatusDependencies.$inferSelect;
+
+// Production Stages - configurable manufacturing stages
+export const productionStages = pgTable("production_stages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  label: varchar("label", { length: 200 }).notNull(),
+  description: text("description"),
+  icon: varchar("icon", { length: 100 }).default("Factory"),
+  color: varchar("color", { length: 100 }).default("bg-chart-1"),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertProductionStageSchema = createInsertSchema(productionStages).omit({ 
+  id: true, 
+  createdAt: true,
+  updatedAt: true
+});
+
+export type InsertProductionStage = z.infer<typeof insertProductionStageSchema>;
+export type ProductionStage = typeof productionStages.$inferSelect;
