@@ -1,20 +1,32 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle2, Circle, Clock } from "lucide-react";
+import { CheckCircle2, Circle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import * as LucideIcons from "lucide-react";
 
-interface TimelineEvent {
+interface TimelineStage {
   id: string;
   title: string;
   description?: string;
-  date: string;
-  status: "complete" | "current" | "pending";
+  icon?: string;
+  isCompleted: boolean;
+  completedAt?: string;
 }
 
 interface JobTimelineProps {
-  events: TimelineEvent[];
+  stages: TimelineStage[];
+  onToggleStage?: (stageId: string) => void;
+  isLoading?: boolean;
+  loadingStageId?: string | null;
 }
 
-export function JobTimeline({ events }: JobTimelineProps) {
+function getIconComponent(iconName?: string) {
+  if (!iconName) return null;
+  const IconComponent = (LucideIcons as Record<string, any>)[iconName];
+  return IconComponent ? <IconComponent className="h-4 w-4" /> : null;
+}
+
+export function JobTimeline({ stages, onToggleStage, isLoading, loadingStageId }: JobTimelineProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -22,47 +34,82 @@ export function JobTimeline({ events }: JobTimelineProps) {
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
-          {events.map((event, index) => (
-            <div
-              key={event.id}
-              className="flex gap-3"
-              data-testid={`timeline-event-${event.id}`}
-            >
-              <div className="flex flex-col items-center">
-                {event.status === "complete" ? (
-                  <CheckCircle2 className="h-5 w-5 text-success" />
-                ) : event.status === "current" ? (
-                  <Clock className="h-5 w-5 text-accent" />
-                ) : (
-                  <Circle className="h-5 w-5 text-muted-foreground" />
-                )}
-                {index < events.length - 1 && (
-                  <div
+          {stages.map((stage, index) => {
+            const isStageLoading = loadingStageId === stage.id;
+            
+            return (
+              <div
+                key={stage.id}
+                className="flex gap-3"
+                data-testid={`timeline-stage-${stage.id}`}
+              >
+                <div className="flex flex-col items-center">
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     className={cn(
-                      "w-0.5 flex-1 mt-2",
-                      event.status === "complete" ? "bg-success" : "bg-muted"
+                      "h-6 w-6 p-0 rounded-full",
+                      stage.isCompleted 
+                        ? "text-success hover:text-success/80" 
+                        : "text-muted-foreground hover:text-foreground"
                     )}
-                  />
-                )}
-              </div>
-              <div className="flex-1 pb-4">
-                <div className="flex items-center justify-between">
-                  <span
-                    className={cn(
-                      "font-medium text-sm",
-                      event.status === "pending" && "text-muted-foreground"
-                    )}
+                    onClick={() => onToggleStage?.(stage.id)}
+                    disabled={isLoading}
+                    data-testid={`toggle-stage-${stage.id}`}
                   >
-                    {event.title}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{event.date}</span>
+                    {isStageLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : stage.isCompleted ? (
+                      <CheckCircle2 className="h-5 w-5" />
+                    ) : (
+                      <Circle className="h-5 w-5" />
+                    )}
+                  </Button>
+                  {index < stages.length - 1 && (
+                    <div
+                      className={cn(
+                        "w-0.5 flex-1 mt-2",
+                        stage.isCompleted ? "bg-success" : "bg-muted"
+                      )}
+                    />
+                  )}
                 </div>
-                {event.description && (
-                  <p className="text-xs text-muted-foreground mt-1">{event.description}</p>
-                )}
+                <div className="flex-1 pb-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {stage.icon && (
+                        <span className={cn(
+                          "text-muted-foreground",
+                          stage.isCompleted && "text-success"
+                        )}>
+                          {getIconComponent(stage.icon)}
+                        </span>
+                      )}
+                      <span
+                        className={cn(
+                          "font-medium text-sm",
+                          !stage.isCompleted && "text-muted-foreground"
+                        )}
+                      >
+                        {stage.title}
+                      </span>
+                    </div>
+                    {stage.completedAt && (
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(stage.completedAt).toLocaleDateString("en-AU", {
+                          day: "numeric",
+                          month: "short",
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  {stage.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{stage.description}</p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </CardContent>
     </Card>
