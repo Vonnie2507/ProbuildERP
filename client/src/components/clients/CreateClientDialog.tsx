@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,27 +52,40 @@ export function CreateClientDialog({
   const [duplicates, setDuplicates] = useState<Client[]>([]);
   const [viewingClient, setViewingClient] = useState<Client | null>(null);
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
+  const requestCounterRef = useRef(0);
 
   const debouncedName = useDebounce(formData.name, 500);
   const debouncedEmail = useDebounce(formData.email, 500);
   const debouncedPhone = useDebounce(formData.phone, 500);
 
-  const checkDuplicatesMutation = useMutation({
-    mutationFn: async (data: { name?: string; email?: string; phone?: string }) => {
-      const response = await apiRequest("POST", "/api/clients/check-duplicate", data);
-      return response.json();
-    },
-    onSuccess: (data) => {
-      setDuplicates(data.duplicates || []);
-      setIsCheckingDuplicates(false);
-    },
-    onError: () => {
-      setIsCheckingDuplicates(false);
-    },
-  });
+  const checkDuplicates = useCallback(async (name?: string, email?: string, phone?: string) => {
+    const currentRequest = ++requestCounterRef.current;
+    setIsCheckingDuplicates(true);
+    
+    try {
+      const response = await apiRequest("POST", "/api/clients/check-duplicate", { name, email, phone });
+      const data = await response.json();
+      
+      if (currentRequest === requestCounterRef.current) {
+        setDuplicates(data.duplicates || []);
+        setIsCheckingDuplicates(false);
+      }
+    } catch (error) {
+      if (currentRequest === requestCounterRef.current) {
+        setIsCheckingDuplicates(false);
+      }
+    }
+  }, []);
+
+  const clearDuplicateSearch = useCallback(() => {
+    requestCounterRef.current++;
+    setDuplicates([]);
+    setIsCheckingDuplicates(false);
+  }, []);
 
   useEffect(() => {
     if (!open) {
+      requestCounterRef.current++;
       setFormData({
         name: "",
         phone: "",
@@ -94,24 +107,23 @@ export function CreateClientDialog({
       (debouncedPhone && debouncedPhone.replace(/\D/g, '').length >= 6);
 
     if (hasSearchableValue) {
-      setIsCheckingDuplicates(true);
-      checkDuplicatesMutation.mutate({
-        name: debouncedName || undefined,
-        email: debouncedEmail || undefined,
-        phone: debouncedPhone || undefined,
-      });
+      checkDuplicates(
+        debouncedName || undefined,
+        debouncedEmail || undefined,
+        debouncedPhone || undefined
+      );
     } else {
-      setDuplicates([]);
+      clearDuplicateSearch();
     }
-  }, [debouncedName, debouncedEmail, debouncedPhone]);
+  }, [debouncedName, debouncedEmail, debouncedPhone, checkDuplicates, clearDuplicateSearch]);
 
   const createClientMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const response = await apiRequest("POST", "/api/clients", data);
       return response.json();
     },
-    onSuccess: (client) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+    onSuccess: async (client) => {
+      await queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       toast({
         title: "Client Created",
         description: `${client.name} has been added successfully`,

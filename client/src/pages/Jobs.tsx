@@ -57,8 +57,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Job, Client, ProductionTask, User } from "@shared/schema";
-import { Plus } from "lucide-react";
+import { Plus, UserPlus } from "lucide-react";
 import { DialogTrigger } from "@/components/ui/dialog";
+import { CreateClientDialog } from "@/components/clients/CreateClientDialog";
 
 type JobStatus = "in_progress" | "production" | "ready" | "scheduled" | "complete";
 
@@ -94,6 +95,7 @@ export default function Jobs() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isNewJobDialogOpen, setIsNewJobDialogOpen] = useState(false);
+  const [isCreateClientDialogOpen, setIsCreateClientDialogOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [formData, setFormData] = useState({
@@ -892,21 +894,33 @@ export default function Jobs() {
           <form onSubmit={handleCreateDirectJob} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="new-job-client">Client</Label>
-              <Select 
-                value={newJobData.clientId}
-                onValueChange={(value) => setNewJobData({ ...newJobData, clientId: value })}
-              >
-                <SelectTrigger data-testid="select-new-job-client">
-                  <SelectValue placeholder="Select a client" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select 
+                  value={newJobData.clientId}
+                  onValueChange={(value) => setNewJobData({ ...newJobData, clientId: value })}
+                >
+                  <SelectTrigger data-testid="select-new-job-client" className="flex-1">
+                    <SelectValue placeholder="Select a client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.map((client) => (
+                      <SelectItem key={client.id} value={client.id}>
+                        {client.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setIsCreateClientDialogOpen(true)}
+                  title="Create new client"
+                  data-testid="button-create-new-client"
+                >
+                  <UserPlus className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="new-job-type">Job Type</Label>
@@ -969,6 +983,17 @@ export default function Jobs() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <CreateClientDialog
+        open={isCreateClientDialogOpen}
+        onOpenChange={setIsCreateClientDialogOpen}
+        onClientCreated={(client) => {
+          setNewJobData({ ...newJobData, clientId: client.id });
+        }}
+        onSelectExistingClient={(client) => {
+          setNewJobData({ ...newJobData, clientId: client.id });
+        }}
+      />
     </div>
   );
 }
