@@ -74,6 +74,13 @@ import {
   type JobStatusDependency, jobStatusDependencies,
   type ProductionStage, type InsertProductionStage, productionStages,
   dashboardWidgets, roleDashboardLayouts, dashboardWidgetInstances,
+  // Voice Calls & AI Coaching
+  voiceCalls, callTranscripts, salesChecklistItems, callChecklistStatus, callCoachingPrompts,
+  type VoiceCall, type InsertVoiceCall,
+  type CallTranscript, type InsertCallTranscript,
+  type SalesChecklistItem, type InsertSalesChecklistItem,
+  type CallChecklistStatus, type InsertCallChecklistStatus,
+  type CallCoachingPrompt, type InsertCallCoachingPrompt,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -590,6 +597,45 @@ export interface IStorage {
   updateProductionStage(id: string, stage: Partial<InsertProductionStage>): Promise<ProductionStage | undefined>;
   deleteProductionStage(id: string): Promise<boolean>;
   reorderProductionStages(stageIds: string[]): Promise<boolean>;
+
+  // ============================================
+  // VOICE CALLS & AI COACHING
+  // ============================================
+
+  // Voice Calls
+  getVoiceCall(id: string): Promise<VoiceCall | undefined>;
+  getVoiceCallBySid(twilioCallSid: string): Promise<VoiceCall | undefined>;
+  getVoiceCalls(): Promise<VoiceCall[]>;
+  getActiveVoiceCalls(): Promise<VoiceCall[]>;
+  getVoiceCallsByStaff(userId: string): Promise<VoiceCall[]>;
+  getVoiceCallsByClient(clientId: string): Promise<VoiceCall[]>;
+  getVoiceCallsByLead(leadId: string): Promise<VoiceCall[]>;
+  createVoiceCall(call: InsertVoiceCall): Promise<VoiceCall>;
+  updateVoiceCall(id: string, call: Partial<InsertVoiceCall>): Promise<VoiceCall | undefined>;
+
+  // Call Transcripts
+  getCallTranscripts(callId: string): Promise<CallTranscript[]>;
+  createCallTranscript(transcript: InsertCallTranscript): Promise<CallTranscript>;
+  createCallTranscripts(transcripts: InsertCallTranscript[]): Promise<CallTranscript[]>;
+
+  // Sales Checklist Items
+  getSalesChecklistItem(id: string): Promise<SalesChecklistItem | undefined>;
+  getSalesChecklistItems(): Promise<SalesChecklistItem[]>;
+  getActiveSalesChecklistItems(): Promise<SalesChecklistItem[]>;
+  createSalesChecklistItem(item: InsertSalesChecklistItem): Promise<SalesChecklistItem>;
+  updateSalesChecklistItem(id: string, item: Partial<InsertSalesChecklistItem>): Promise<SalesChecklistItem | undefined>;
+  deleteSalesChecklistItem(id: string): Promise<boolean>;
+  reorderSalesChecklistItems(itemIds: string[]): Promise<boolean>;
+
+  // Call Checklist Status
+  getCallChecklistStatus(callId: string): Promise<CallChecklistStatus[]>;
+  initializeCallChecklistStatus(callId: string): Promise<CallChecklistStatus[]>;
+  updateCallChecklistItemStatus(callId: string, checklistItemId: string, isCovered: boolean, detectedText?: string): Promise<CallChecklistStatus | undefined>;
+
+  // Call Coaching Prompts
+  getCallCoachingPrompts(callId: string): Promise<CallCoachingPrompt[]>;
+  createCallCoachingPrompt(prompt: InsertCallCoachingPrompt): Promise<CallCoachingPrompt>;
+  acknowledgeCallCoachingPrompt(id: string): Promise<CallCoachingPrompt | undefined>;
 }
 
 export interface TransactionFilters {
@@ -3932,6 +3978,190 @@ export class DatabaseStorage implements IStorage {
         .where(eq(productionStages.id, stageIds[i]));
     }
     return true;
+  }
+
+  // ============================================
+  // VOICE CALLS & AI COACHING
+  // ============================================
+
+  // Voice Calls
+  async getVoiceCall(id: string): Promise<VoiceCall | undefined> {
+    const [call] = await db.select().from(voiceCalls).where(eq(voiceCalls.id, id));
+    return call;
+  }
+
+  async getVoiceCallBySid(twilioCallSid: string): Promise<VoiceCall | undefined> {
+    const [call] = await db.select().from(voiceCalls).where(eq(voiceCalls.twilioCallSid, twilioCallSid));
+    return call;
+  }
+
+  async getVoiceCalls(): Promise<VoiceCall[]> {
+    return db.select().from(voiceCalls).orderBy(desc(voiceCalls.createdAt));
+  }
+
+  async getActiveVoiceCalls(): Promise<VoiceCall[]> {
+    return db.select().from(voiceCalls)
+      .where(or(
+        eq(voiceCalls.status, "ringing"),
+        eq(voiceCalls.status, "in_progress")
+      ))
+      .orderBy(desc(voiceCalls.startedAt));
+  }
+
+  async getVoiceCallsByStaff(userId: string): Promise<VoiceCall[]> {
+    return db.select().from(voiceCalls)
+      .where(eq(voiceCalls.staffUserId, userId))
+      .orderBy(desc(voiceCalls.createdAt));
+  }
+
+  async getVoiceCallsByClient(clientId: string): Promise<VoiceCall[]> {
+    return db.select().from(voiceCalls)
+      .where(eq(voiceCalls.clientId, clientId))
+      .orderBy(desc(voiceCalls.createdAt));
+  }
+
+  async getVoiceCallsByLead(leadId: string): Promise<VoiceCall[]> {
+    return db.select().from(voiceCalls)
+      .where(eq(voiceCalls.leadId, leadId))
+      .orderBy(desc(voiceCalls.createdAt));
+  }
+
+  async createVoiceCall(call: InsertVoiceCall): Promise<VoiceCall> {
+    const [created] = await db.insert(voiceCalls).values(call).returning();
+    return created;
+  }
+
+  async updateVoiceCall(id: string, call: Partial<InsertVoiceCall>): Promise<VoiceCall | undefined> {
+    const [updated] = await db.update(voiceCalls)
+      .set(call)
+      .where(eq(voiceCalls.id, id))
+      .returning();
+    return updated;
+  }
+
+  // Call Transcripts
+  async getCallTranscripts(callId: string): Promise<CallTranscript[]> {
+    return db.select().from(callTranscripts)
+      .where(eq(callTranscripts.callId, callId))
+      .orderBy(callTranscripts.startTime);
+  }
+
+  async createCallTranscript(transcript: InsertCallTranscript): Promise<CallTranscript> {
+    const [created] = await db.insert(callTranscripts).values(transcript).returning();
+    return created;
+  }
+
+  async createCallTranscripts(transcripts: InsertCallTranscript[]): Promise<CallTranscript[]> {
+    if (transcripts.length === 0) return [];
+    return db.insert(callTranscripts).values(transcripts).returning();
+  }
+
+  // Sales Checklist Items
+  async getSalesChecklistItem(id: string): Promise<SalesChecklistItem | undefined> {
+    const [item] = await db.select().from(salesChecklistItems).where(eq(salesChecklistItems.id, id));
+    return item;
+  }
+
+  async getSalesChecklistItems(): Promise<SalesChecklistItem[]> {
+    return db.select().from(salesChecklistItems).orderBy(salesChecklistItems.sortOrder);
+  }
+
+  async getActiveSalesChecklistItems(): Promise<SalesChecklistItem[]> {
+    return db.select().from(salesChecklistItems)
+      .where(eq(salesChecklistItems.isActive, true))
+      .orderBy(salesChecklistItems.sortOrder);
+  }
+
+  async createSalesChecklistItem(item: InsertSalesChecklistItem): Promise<SalesChecklistItem> {
+    const maxOrder = await db.select({ max: sql<number>`COALESCE(MAX(sort_order), -1)` })
+      .from(salesChecklistItems);
+    const sortOrder = (maxOrder[0]?.max ?? -1) + 1;
+    
+    const [created] = await db.insert(salesChecklistItems)
+      .values({ ...item, sortOrder })
+      .returning();
+    return created;
+  }
+
+  async updateSalesChecklistItem(id: string, item: Partial<InsertSalesChecklistItem>): Promise<SalesChecklistItem | undefined> {
+    const [updated] = await db.update(salesChecklistItems)
+      .set({ ...item, updatedAt: new Date() })
+      .where(eq(salesChecklistItems.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteSalesChecklistItem(id: string): Promise<boolean> {
+    const result = await db.delete(salesChecklistItems).where(eq(salesChecklistItems.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async reorderSalesChecklistItems(itemIds: string[]): Promise<boolean> {
+    for (let i = 0; i < itemIds.length; i++) {
+      await db.update(salesChecklistItems)
+        .set({ sortOrder: i, updatedAt: new Date() })
+        .where(eq(salesChecklistItems.id, itemIds[i]));
+    }
+    return true;
+  }
+
+  // Call Checklist Status
+  async getCallChecklistStatus(callId: string): Promise<CallChecklistStatus[]> {
+    return db.select().from(callChecklistStatus)
+      .where(eq(callChecklistStatus.callId, callId));
+  }
+
+  async initializeCallChecklistStatus(callId: string): Promise<CallChecklistStatus[]> {
+    const activeItems = await this.getActiveSalesChecklistItems();
+    if (activeItems.length === 0) return [];
+    
+    const statuses = activeItems.map(item => ({
+      callId,
+      checklistItemId: item.id,
+      isCovered: false,
+    }));
+    
+    return db.insert(callChecklistStatus).values(statuses).returning();
+  }
+
+  async updateCallChecklistItemStatus(
+    callId: string, 
+    checklistItemId: string, 
+    isCovered: boolean, 
+    detectedText?: string
+  ): Promise<CallChecklistStatus | undefined> {
+    const [updated] = await db.update(callChecklistStatus)
+      .set({ 
+        isCovered, 
+        coveredAt: isCovered ? new Date() : null,
+        detectedText 
+      })
+      .where(and(
+        eq(callChecklistStatus.callId, callId),
+        eq(callChecklistStatus.checklistItemId, checklistItemId)
+      ))
+      .returning();
+    return updated;
+  }
+
+  // Call Coaching Prompts
+  async getCallCoachingPrompts(callId: string): Promise<CallCoachingPrompt[]> {
+    return db.select().from(callCoachingPrompts)
+      .where(eq(callCoachingPrompts.callId, callId))
+      .orderBy(desc(callCoachingPrompts.createdAt));
+  }
+
+  async createCallCoachingPrompt(prompt: InsertCallCoachingPrompt): Promise<CallCoachingPrompt> {
+    const [created] = await db.insert(callCoachingPrompts).values(prompt).returning();
+    return created;
+  }
+
+  async acknowledgeCallCoachingPrompt(id: string): Promise<CallCoachingPrompt | undefined> {
+    const [updated] = await db.update(callCoachingPrompts)
+      .set({ wasAcknowledged: true, acknowledgedAt: new Date() })
+      .where(eq(callCoachingPrompts.id, id))
+      .returning();
+    return updated;
   }
 }
 

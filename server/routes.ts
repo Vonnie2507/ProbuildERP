@@ -19,7 +19,8 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import Stripe from "stripe";
-import { getTwilioClient, getTwilioFromPhoneNumber } from "./twilio";
+import { getTwilioClient, getTwilioFromPhoneNumber, makeOutboundCall, generateTwimlForInbound, generateTwimlForOutbound, getCallRecording } from "./twilio";
+import { processTranscriptUpdate, generateSuggestedResponse } from "./coaching";
 
 type UserRole = "admin" | "sales" | "scheduler" | "production_manager" | "warehouse" | "installer" | "trade_client";
 
@@ -6208,6 +6209,452 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error reordering production stages:", error);
       res.status(500).json({ error: "Failed to reorder production stages" });
+    }
+  });
+
+  // ============================================
+  // SALES CHECKLIST ITEMS
+  // ============================================
+
+  // Get all sales checklist items (admin only - for configuration page)
+  app.get("/api/sales-checklist-items", requireRoles("admin"), async (req, res) => {
+    try {
+      const items = await storage.getSalesChecklistItems();
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching sales checklist items:", error);
+      res.status(500).json({ error: "Failed to fetch sales checklist items" });
+    }
+  });
+
+  // Get active sales checklist items (sales/admin can access - needed during calls)
+  app.get("/api/sales-checklist-items/active", requireRoles("admin", "sales"), async (req, res) => {
+    try {
+      const items = await storage.getActiveSalesChecklistItems();
+      res.json(items);
+    } catch (error) {
+      console.error("Error fetching active sales checklist items:", error);
+      res.status(500).json({ error: "Failed to fetch active sales checklist items" });
+    }
+  });
+
+  // Get single sales checklist item (admin only - for configuration)
+  app.get("/api/sales-checklist-items/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const item = await storage.getSalesChecklistItem(req.params.id);
+      if (!item) {
+        return res.status(404).json({ error: "Sales checklist item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Error fetching sales checklist item:", error);
+      res.status(500).json({ error: "Failed to fetch sales checklist item" });
+    }
+  });
+
+  // Create sales checklist item
+  app.post("/api/sales-checklist-items", requireRoles("admin"), async (req, res) => {
+    try {
+      const item = await storage.createSalesChecklistItem(req.body);
+      res.status(201).json(item);
+    } catch (error) {
+      console.error("Error creating sales checklist item:", error);
+      res.status(500).json({ error: "Failed to create sales checklist item" });
+    }
+  });
+
+  // Update sales checklist item
+  app.patch("/api/sales-checklist-items/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const item = await storage.updateSalesChecklistItem(req.params.id, req.body);
+      if (!item) {
+        return res.status(404).json({ error: "Sales checklist item not found" });
+      }
+      res.json(item);
+    } catch (error) {
+      console.error("Error updating sales checklist item:", error);
+      res.status(500).json({ error: "Failed to update sales checklist item" });
+    }
+  });
+
+  // Delete sales checklist item
+  app.delete("/api/sales-checklist-items/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const success = await storage.deleteSalesChecklistItem(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Sales checklist item not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting sales checklist item:", error);
+      res.status(500).json({ error: "Failed to delete sales checklist item" });
+    }
+  });
+
+  // Reorder sales checklist items
+  app.post("/api/sales-checklist-items/reorder", requireRoles("admin"), async (req, res) => {
+    try {
+      const { itemIds } = req.body;
+      if (!Array.isArray(itemIds)) {
+        return res.status(400).json({ error: "itemIds must be an array" });
+      }
+      await storage.reorderSalesChecklistItems(itemIds);
+      const items = await storage.getSalesChecklistItems();
+      res.json(items);
+    } catch (error) {
+      console.error("Error reordering sales checklist items:", error);
+      res.status(500).json({ error: "Failed to reorder sales checklist items" });
+    }
+  });
+
+  // ============================================
+  // VOICE CALLS & AI COACHING
+  // ============================================
+
+  // Get all voice calls
+  app.get("/api/voice-calls", requireAuth, async (req, res) => {
+    try {
+      const calls = await storage.getVoiceCalls();
+      res.json(calls);
+    } catch (error) {
+      console.error("Error fetching voice calls:", error);
+      res.status(500).json({ error: "Failed to fetch voice calls" });
+    }
+  });
+
+  // Get active voice calls (for live coach panel)
+  app.get("/api/voice-calls/active", requireAuth, async (req, res) => {
+    try {
+      const calls = await storage.getActiveVoiceCalls();
+      res.json(calls);
+    } catch (error) {
+      console.error("Error fetching active voice calls:", error);
+      res.status(500).json({ error: "Failed to fetch active voice calls" });
+    }
+  });
+
+  // Get single voice call with full details
+  app.get("/api/voice-calls/:id", requireAuth, async (req, res) => {
+    try {
+      const call = await storage.getVoiceCall(req.params.id);
+      if (!call) {
+        return res.status(404).json({ error: "Voice call not found" });
+      }
+      const [transcripts, checklistStatus, coachingPrompts] = await Promise.all([
+        storage.getCallTranscripts(req.params.id),
+        storage.getCallChecklistStatus(req.params.id),
+        storage.getCallCoachingPrompts(req.params.id),
+      ]);
+      res.json({ call, transcripts, checklistStatus, coachingPrompts });
+    } catch (error) {
+      console.error("Error fetching voice call:", error);
+      res.status(500).json({ error: "Failed to fetch voice call" });
+    }
+  });
+
+  // Get voice calls by lead
+  app.get("/api/leads/:leadId/voice-calls", requireAuth, async (req, res) => {
+    try {
+      const calls = await storage.getVoiceCallsByLead(req.params.leadId);
+      res.json(calls);
+    } catch (error) {
+      console.error("Error fetching voice calls for lead:", error);
+      res.status(500).json({ error: "Failed to fetch voice calls for lead" });
+    }
+  });
+
+  // Create voice call (manual or via Twilio webhook)
+  app.post("/api/voice-calls", requireAuth, async (req, res) => {
+    try {
+      const call = await storage.createVoiceCall(req.body);
+      // Initialize checklist status for the call
+      await storage.initializeCallChecklistStatus(call.id);
+      res.status(201).json(call);
+    } catch (error) {
+      console.error("Error creating voice call:", error);
+      res.status(500).json({ error: "Failed to create voice call" });
+    }
+  });
+
+  // Update voice call status
+  app.patch("/api/voice-calls/:id", requireAuth, async (req, res) => {
+    try {
+      const call = await storage.updateVoiceCall(req.params.id, req.body);
+      if (!call) {
+        return res.status(404).json({ error: "Voice call not found" });
+      }
+      res.json(call);
+    } catch (error) {
+      console.error("Error updating voice call:", error);
+      res.status(500).json({ error: "Failed to update voice call" });
+    }
+  });
+
+  // Add transcript entry (from real-time transcription service)
+  app.post("/api/voice-calls/:callId/transcripts", requireAuth, async (req, res) => {
+    try {
+      const transcript = await storage.createCallTranscript({
+        callId: req.params.callId,
+        ...req.body,
+      });
+      res.status(201).json(transcript);
+    } catch (error) {
+      console.error("Error creating transcript:", error);
+      res.status(500).json({ error: "Failed to create transcript" });
+    }
+  });
+
+  // Update checklist item status during call
+  app.patch("/api/voice-calls/:callId/checklist/:checklistItemId", requireAuth, async (req, res) => {
+    try {
+      const { isCovered, detectedText } = req.body;
+      const status = await storage.updateCallChecklistItemStatus(
+        req.params.callId,
+        req.params.checklistItemId,
+        isCovered,
+        detectedText
+      );
+      if (!status) {
+        return res.status(404).json({ error: "Checklist status not found" });
+      }
+      res.json(status);
+    } catch (error) {
+      console.error("Error updating checklist status:", error);
+      res.status(500).json({ error: "Failed to update checklist status" });
+    }
+  });
+
+  // Create coaching prompt (from AI coaching service)
+  app.post("/api/voice-calls/:callId/coaching-prompts", requireAuth, async (req, res) => {
+    try {
+      const prompt = await storage.createCallCoachingPrompt({
+        callId: req.params.callId,
+        ...req.body,
+      });
+      res.status(201).json(prompt);
+    } catch (error) {
+      console.error("Error creating coaching prompt:", error);
+      res.status(500).json({ error: "Failed to create coaching prompt" });
+    }
+  });
+
+  // Acknowledge coaching prompt
+  app.post("/api/coaching-prompts/:id/acknowledge", requireAuth, async (req, res) => {
+    try {
+      const prompt = await storage.acknowledgeCallCoachingPrompt(req.params.id);
+      if (!prompt) {
+        return res.status(404).json({ error: "Coaching prompt not found" });
+      }
+      res.json(prompt);
+    } catch (error) {
+      console.error("Error acknowledging coaching prompt:", error);
+      res.status(500).json({ error: "Failed to acknowledge coaching prompt" });
+    }
+  });
+
+  // ============================================
+  // TWILIO VOICE WEBHOOKS
+  // ============================================
+
+  // Initiate outbound call
+  app.post("/api/voice/call", requireAuth, async (req, res) => {
+    try {
+      const { phoneNumber, leadId, clientId } = req.body;
+      
+      if (!phoneNumber) {
+        return res.status(400).json({ error: "Phone number required" });
+      }
+
+      const webhookBaseUrl = `${req.protocol}://${req.get('host')}`;
+      
+      const result = await makeOutboundCall({
+        to: phoneNumber,
+        webhookBaseUrl,
+        staffUserId: req.session?.userId,
+        leadId,
+        clientId,
+      });
+
+      if (!result) {
+        return res.status(500).json({ error: "Failed to initiate call" });
+      }
+
+      const call = await storage.createVoiceCall({
+        twilioCallSid: result.sid,
+        direction: "outbound",
+        status: "ringing",
+        fromNumber: await getTwilioFromPhoneNumber() || "",
+        toNumber: phoneNumber,
+        staffUserId: req.session?.userId,
+        leadId,
+        clientId,
+      });
+
+      await storage.initializeCallChecklistStatus(call.id);
+
+      res.json({ callId: call.id, callSid: result.sid });
+    } catch (error) {
+      console.error("Error initiating call:", error);
+      res.status(500).json({ error: "Failed to initiate call" });
+    }
+  });
+
+  // Twilio inbound call webhook
+  app.post("/api/twilio/voice/inbound", async (req, res) => {
+    try {
+      const { CallSid, From, To, CallStatus } = req.body;
+      console.log("Inbound call webhook:", { CallSid, From, To, CallStatus });
+
+      const webhookBaseUrl = `${req.protocol}://${req.get('host')}`;
+      
+      const call = await storage.createVoiceCall({
+        twilioCallSid: CallSid,
+        direction: "inbound",
+        status: "ringing",
+        fromNumber: From,
+        toNumber: To,
+      });
+
+      await storage.initializeCallChecklistStatus(call.id);
+
+      const twiml = generateTwimlForInbound({
+        greeting: "Thank you for calling Probuild PVC. Connecting you now.",
+        webhookBaseUrl,
+      });
+
+      res.type('text/xml');
+      res.send(twiml);
+    } catch (error) {
+      console.error("Error handling inbound call:", error);
+      res.status(500).send("Error");
+    }
+  });
+
+  // Twilio outbound call answer webhook
+  app.post("/api/twilio/voice/outbound", async (req, res) => {
+    try {
+      console.log("Outbound call webhook:", req.body);
+
+      const twiml = generateTwimlForOutbound({});
+
+      res.type('text/xml');
+      res.send(twiml);
+    } catch (error) {
+      console.error("Error handling outbound call:", error);
+      res.status(500).send("Error");
+    }
+  });
+
+  // Twilio call status webhook
+  app.post("/api/twilio/voice/status", async (req, res) => {
+    try {
+      const { CallSid, CallStatus, CallDuration, Timestamp } = req.body;
+      console.log("Call status webhook:", { CallSid, CallStatus, CallDuration });
+
+      const call = await storage.getVoiceCallBySid(CallSid);
+      if (!call) {
+        console.log("Call not found for SID:", CallSid);
+        return res.status(200).send("OK");
+      }
+
+      const statusMap: Record<string, any> = {
+        'initiated': 'ringing',
+        'ringing': 'ringing',
+        'in-progress': 'in_progress',
+        'completed': 'completed',
+        'busy': 'busy',
+        'failed': 'failed',
+        'no-answer': 'no_answer',
+        'canceled': 'canceled',
+      };
+
+      const updates: any = {
+        status: statusMap[CallStatus] || call.status,
+      };
+
+      if (CallStatus === 'in-progress' && !call.answeredAt) {
+        updates.answeredAt = new Date();
+      }
+
+      if (['completed', 'busy', 'failed', 'no-answer', 'canceled'].includes(CallStatus)) {
+        updates.endedAt = new Date();
+        if (CallDuration) {
+          updates.duration = parseInt(CallDuration);
+        }
+      }
+
+      await storage.updateVoiceCall(call.id, updates);
+
+      res.status(200).send("OK");
+    } catch (error) {
+      console.error("Error handling call status:", error);
+      res.status(200).send("OK");
+    }
+  });
+
+  // Twilio recording status webhook
+  app.post("/api/twilio/voice/recording", async (req, res) => {
+    try {
+      const { CallSid, RecordingSid, RecordingUrl, RecordingStatus, RecordingDuration } = req.body;
+      console.log("Recording webhook:", { CallSid, RecordingSid, RecordingStatus });
+
+      if (RecordingStatus !== 'completed') {
+        return res.status(200).send("OK");
+      }
+
+      const call = await storage.getVoiceCallBySid(CallSid);
+      if (!call) {
+        console.log("Call not found for recording SID:", CallSid);
+        return res.status(200).send("OK");
+      }
+
+      await storage.updateVoiceCall(call.id, {
+        recordingUrl: RecordingUrl,
+        recordingSid: RecordingSid,
+        duration: RecordingDuration ? parseInt(RecordingDuration) : call.duration,
+      });
+
+      res.status(200).send("OK");
+    } catch (error) {
+      console.error("Error handling recording:", error);
+      res.status(200).send("OK");
+    }
+  });
+
+  // ============================================
+  // AI COACHING ENDPOINTS
+  // ============================================
+
+  // Trigger AI analysis of call transcript
+  app.post("/api/voice-calls/:callId/analyze", requireAuth, async (req, res) => {
+    try {
+      await processTranscriptUpdate(req.params.callId);
+      
+      const [checklistStatus, coachingPrompts] = await Promise.all([
+        storage.getCallChecklistStatus(req.params.callId),
+        storage.getCallCoachingPrompts(req.params.callId),
+      ]);
+
+      res.json({ checklistStatus, coachingPrompts });
+    } catch (error) {
+      console.error("Error analyzing transcript:", error);
+      res.status(500).json({ error: "Failed to analyze transcript" });
+    }
+  });
+
+  // Get AI-suggested response for customer question
+  app.post("/api/voice-calls/:callId/suggest-response", requireAuth, async (req, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) {
+        return res.status(400).json({ error: "Question required" });
+      }
+
+      const response = await generateSuggestedResponse(req.params.callId, question);
+      res.json({ suggestedResponse: response });
+    } catch (error) {
+      console.error("Error generating suggested response:", error);
+      res.status(500).json({ error: "Failed to generate response" });
     }
   });
 

@@ -42,6 +42,7 @@ import DashboardBuilder from "@/pages/DashboardBuilder";
 import Financial from "@/pages/Financial";
 import JobStageConfiguration from "@/pages/JobStageConfiguration";
 import KanbanColumnSettings from "@/pages/KanbanColumnSettings";
+import SalesChecklistConfig from "@/pages/SalesChecklistConfig";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -425,6 +426,13 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/kanban-column-settings">
           <MainLayout>
             <KanbanColumnSettings />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/sales-checklist-config">
+        <ProtectedRoute path="/sales-checklist-config">
+          <MainLayout>
+            <SalesChecklistConfig />
           </MainLayout>
         </ProtectedRoute>
       </Route>

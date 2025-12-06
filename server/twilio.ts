@@ -164,3 +164,104 @@ export async function sendSMS(
 
   return { sid: result.sid };
 }
+
+// ============================================
+// VOICE CALL FUNCTIONS
+// ============================================
+
+export interface MakeCallOptions {
+  to: string;
+  webhookBaseUrl: string;
+  staffUserId?: string;
+  leadId?: string;
+  clientId?: string;
+}
+
+export async function makeOutboundCall(options: MakeCallOptions): Promise<{ sid: string } | null> {
+  const client = await getTwilioClient();
+  const fromNumber = await getTwilioFromPhoneNumber();
+
+  if (!client || !fromNumber) {
+    throw new Error('Twilio not configured');
+  }
+
+  const statusCallbackUrl = `${options.webhookBaseUrl}/api/twilio/voice/status`;
+  const voiceUrl = `${options.webhookBaseUrl}/api/twilio/voice/outbound`;
+
+  const callParams: any = {
+    to: options.to,
+    from: fromNumber,
+    url: voiceUrl,
+    statusCallback: statusCallbackUrl,
+    statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+    statusCallbackMethod: 'POST',
+    record: true,
+    recordingStatusCallback: `${options.webhookBaseUrl}/api/twilio/voice/recording`,
+    recordingStatusCallbackMethod: 'POST',
+  };
+
+  const call = await client.calls.create(callParams);
+
+  return { sid: call.sid };
+}
+
+export function generateTwimlForInbound(options: {
+  greeting?: string;
+  webhookBaseUrl: string;
+}): string {
+  const { VoiceResponse } = twilio.twiml;
+  const response = new VoiceResponse();
+  
+  if (options.greeting) {
+    response.say({ voice: 'Polly.Matthew' }, options.greeting);
+  }
+  
+  response.dial({
+    record: 'record-from-answer-dual',
+    recordingStatusCallback: `${options.webhookBaseUrl}/api/twilio/voice/recording`,
+    recordingStatusCallbackMethod: 'POST'
+  });
+
+  return response.toString();
+}
+
+export function generateTwimlForOutbound(options: {
+  greeting?: string;
+}): string {
+  const { VoiceResponse } = twilio.twiml;
+  const response = new VoiceResponse();
+  
+  if (options.greeting) {
+    response.say({ voice: 'Polly.Matthew' }, options.greeting);
+  }
+
+  return response.toString();
+}
+
+export async function getCallRecording(callSid: string): Promise<{
+  recordingUrl: string;
+  recordingSid: string;
+  duration: number;
+} | null> {
+  const client = await getTwilioClient();
+  if (!client) {
+    return null;
+  }
+
+  try {
+    const recordings = await client.recordings.list({ callSid, limit: 1 });
+    if (recordings.length === 0) {
+      return null;
+    }
+
+    const recording = recordings[0];
+    return {
+      recordingUrl: `https://api.twilio.com${recording.uri.replace('.json', '.mp3')}`,
+      recordingSid: recording.sid,
+      duration: recording.duration ? parseInt(recording.duration) : 0,
+    };
+  } catch (error) {
+    console.error('Failed to get call recording:', error);
+    return null;
+  }
+}
