@@ -50,6 +50,8 @@ interface CalendarEvent {
   time: string;
   type: CalendarEventType;
   installer?: string;
+  installerRole?: string;
+  installerFullName?: string;
   address?: string;
 }
 
@@ -212,10 +214,15 @@ export default function Schedule() {
     };
   };
 
-  const getInstallerName = (userId: string | null) => {
-    if (!userId) return undefined;
+  const getInstallerInfo = (userId: string | null) => {
+    if (!userId) return { name: undefined, role: undefined, fullName: undefined };
     const user = users.find(u => u.id === userId);
-    return user ? `${user.firstName} ${user.lastName?.[0] || ""}` : undefined;
+    if (!user) return { name: undefined, role: undefined, fullName: undefined };
+    return {
+      name: `${user.firstName} ${user.lastName?.[0] || ""}`,
+      role: user.role,
+      fullName: `${user.firstName} ${user.lastName}`,
+    };
   };
 
   const mapEventType = (dbType: string): CalendarEventType => {
@@ -225,6 +232,7 @@ export default function Schedule() {
 
   const events: CalendarEvent[] = scheduleEvents.map((event) => {
     const jobInfo = getJobInfo(event.jobId);
+    const installerInfo = getInstallerInfo(event.assignedTo);
     return {
       id: event.id,
       jobNumber: jobInfo.jobNumber,
@@ -235,7 +243,9 @@ export default function Schedule() {
         hour12: false,
       }),
       type: mapEventType(event.eventType),
-      installer: getInstallerName(event.assignedTo),
+      installer: installerInfo.name,
+      installerRole: installerInfo.role,
+      installerFullName: installerInfo.fullName,
       address: event.description || "",
     };
   });

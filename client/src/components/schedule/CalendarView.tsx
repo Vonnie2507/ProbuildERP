@@ -15,6 +15,8 @@ interface CalendarEvent {
   time: string;
   type: EventType;
   installer?: string;
+  installerRole?: string;
+  installerFullName?: string;
   jobType?: JobType;
 }
 
@@ -415,8 +417,15 @@ export function CalendarView({ events, onEventClick, onAddEvent }: CalendarViewP
                             <div className="font-medium text-sm">{event.clientName}</div>
                             <div className="text-xs text-muted-foreground">
                               {event.time}
-                              {event.installer && ` • ${event.installer}`}
                             </div>
+                            {event.installerFullName && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                <div>{event.installerFullName}</div>
+                                {event.installerRole && (
+                                  <div className="capitalize text-[11px]">{event.installerRole.replace('_', ' ')}</div>
+                                )}
+                              </div>
+                            )}
                             {event.jobNumber && (
                               <div className="text-xs text-muted-foreground mt-1 font-mono">
                                 {event.jobNumber}
@@ -465,8 +474,15 @@ export function CalendarView({ events, onEventClick, onAddEvent }: CalendarViewP
                             <div className="font-medium text-sm">{event.clientName}</div>
                             <div className="text-xs text-muted-foreground">
                               {event.time}
-                              {event.installer && ` • ${event.installer}`}
                             </div>
+                            {event.installerFullName && (
+                              <div className="text-xs text-muted-foreground mt-1">
+                                <div>{event.installerFullName}</div>
+                                {event.installerRole && (
+                                  <div className="capitalize text-[11px]">{event.installerRole.replace('_', ' ')}</div>
+                                )}
+                              </div>
+                            )}
                             {event.jobNumber && (
                               <div className="text-xs text-muted-foreground mt-1 font-mono">
                                 {event.jobNumber}
