@@ -69,6 +69,7 @@ import {
   type JobPipeline, type InsertJobPipeline,
   type JobPipelineStage, type InsertJobPipelineStage,
   type JobStageCompletion, jobStageCompletions,
+  type KanbanColumn, type InsertKanbanColumn, kanbanColumns,
   dashboardWidgets, roleDashboardLayouts, dashboardWidgetInstances,
 } from "@shared/schema";
 
@@ -557,6 +558,14 @@ export interface IStorage {
   // Job Stage Completions
   getJobStageCompletions(jobId: string): Promise<JobStageCompletion[]>;
   toggleJobStageCompletion(jobId: string, stageId: string, userId?: string): Promise<{ completed: boolean }>;
+
+  // Kanban Columns
+  getKanbanColumns(): Promise<KanbanColumn[]>;
+  getKanbanColumn(id: string): Promise<KanbanColumn | undefined>;
+  createKanbanColumn(column: InsertKanbanColumn): Promise<KanbanColumn>;
+  updateKanbanColumn(id: string, column: Partial<InsertKanbanColumn>): Promise<KanbanColumn | undefined>;
+  deleteKanbanColumn(id: string): Promise<boolean>;
+  reorderKanbanColumns(columnIds: string[]): Promise<boolean>;
 }
 
 export interface TransactionFilters {
@@ -3740,6 +3749,51 @@ export class DatabaseStorage implements IStorage {
       sales: salesAnalytics,
       dateRange: { startDate: start, endDate: end }
     };
+  }
+
+  // Kanban Columns
+  async getKanbanColumns(): Promise<KanbanColumn[]> {
+    return db.select().from(kanbanColumns)
+      .where(eq(kanbanColumns.isActive, true))
+      .orderBy(kanbanColumns.sortOrder);
+  }
+
+  async getKanbanColumn(id: string): Promise<KanbanColumn | undefined> {
+    const [column] = await db.select().from(kanbanColumns).where(eq(kanbanColumns.id, id));
+    return column;
+  }
+
+  async createKanbanColumn(column: InsertKanbanColumn): Promise<KanbanColumn> {
+    const maxOrder = await db.select({ max: sql<number>`COALESCE(MAX(sort_order), -1)` })
+      .from(kanbanColumns);
+    const sortOrder = (maxOrder[0]?.max ?? -1) + 1;
+    
+    const [newColumn] = await db.insert(kanbanColumns)
+      .values({ ...column, sortOrder })
+      .returning();
+    return newColumn;
+  }
+
+  async updateKanbanColumn(id: string, column: Partial<InsertKanbanColumn>): Promise<KanbanColumn | undefined> {
+    const [updated] = await db.update(kanbanColumns)
+      .set({ ...column, updatedAt: new Date() })
+      .where(eq(kanbanColumns.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteKanbanColumn(id: string): Promise<boolean> {
+    const result = await db.delete(kanbanColumns).where(eq(kanbanColumns.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  async reorderKanbanColumns(columnIds: string[]): Promise<boolean> {
+    for (let i = 0; i < columnIds.length; i++) {
+      await db.update(kanbanColumns)
+        .set({ sortOrder: i, updatedAt: new Date() })
+        .where(eq(kanbanColumns.id, columnIds[i]));
+    }
+    return true;
   }
 }
 
