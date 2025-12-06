@@ -2,10 +2,11 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ChevronLeft, ChevronRight, Truck, Wrench, Package, Ruler } from "lucide-react";
+import { ChevronLeft, ChevronRight, Truck, Wrench, Package, Ruler, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type EventType = "install" | "delivery" | "pickup" | "measure";
+type JobType = "supply_only" | "supply_install";
 
 interface CalendarEvent {
   id: string;
@@ -14,6 +15,7 @@ interface CalendarEvent {
   time: string;
   type: EventType;
   installer?: string;
+  jobType?: JobType;
 }
 
 interface CalendarDay {
@@ -70,6 +72,16 @@ export function CalendarView({ events, onEventClick, onAddEvent }: CalendarViewP
       const eventDate = getEventDate(event);
       return eventDate && isSameDay(eventDate, date);
     });
+  };
+
+  // Helper: extract hour from event time
+  const getHourFromEvent = (event: CalendarEvent): number => {
+    try {
+      const date = new Date(event.time);
+      return date.getHours();
+    } catch {
+      return 9;
+    }
   };
 
   const formatMonthYear = (date: Date) => {
@@ -164,6 +176,7 @@ export function CalendarView({ events, onEventClick, onAddEvent }: CalendarViewP
   const weekDays = getWeekDays();
   const dayData = getDayData();
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const hours = Array.from({ length: 14 }, (_, i) => i + 6); // 6am to 7pm
 
   // Event badge component
   const EventBadge = ({ event }: { event: CalendarEvent }) => {
@@ -300,90 +313,178 @@ export function CalendarView({ events, onEventClick, onAddEvent }: CalendarViewP
         )}
 
         {viewMode === "week" && (
-          <div className="grid grid-cols-7 gap-px bg-border rounded-md overflow-hidden">
-            {dayNames.map((day) => (
-              <div
-                key={day}
-                className="bg-muted p-2 text-center text-xs font-medium text-muted-foreground"
-              >
-                {day}
+          <div className="overflow-x-auto">
+            <div className="inline-block min-w-full">
+              {/* Header row with days */}
+              <div className="grid gap-px bg-border rounded-md overflow-hidden" style={{ gridTemplateColumns: "80px repeat(7, 1fr)" }}>
+                <div className="bg-muted p-2 text-center text-xs font-medium text-muted-foreground">Time</div>
+                {weekDays.map((day, idx) => (
+                  <div
+                    key={idx}
+                    className={cn(
+                      "bg-muted p-2 text-center text-xs font-medium text-muted-foreground",
+                      day.isToday && "bg-accent text-accent-foreground"
+                    )}
+                  >
+                    <div>{dayNames[day.date.getDay()]}</div>
+                    <div>{day.date.getDate()}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-            {weekDays.map((day, idx) => (
-              <div
-                key={idx}
-                className={cn(
-                  "bg-background min-h-[120px] p-2 cursor-pointer hover-elevate",
-                  day.isToday && "ring-2 ring-accent ring-inset"
-                )}
-                onClick={() => onAddEvent?.(day.date)}
-                data-testid={`calendar-day-${idx}`}
-              >
-                <div
-                  className={cn(
-                    "text-sm font-medium mb-2",
-                    !day.isCurrentMonth && "text-muted-foreground",
-                    day.isToday && "text-accent"
-                  )}
-                >
-                  {day.date.toLocaleDateString("en-AU", { day: "numeric", month: "short" })}
-                </div>
-                <div className="space-y-1">
-                  {day.events.slice(0, 3).map((event) => (
-                    <EventBadge key={event.id} event={event} />
-                  ))}
-                  {day.events.length > 3 && (
-                    <div className="text-[10px] text-muted-foreground">
-                      +{day.events.length - 3} more
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
-        {viewMode === "day" && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">{dayData.events.length} events scheduled</h3>
-            </div>
-
-            {dayData.events.length > 0 ? (
-              <div className="space-y-2">
-                {dayData.events
-                  .sort((a, b) => a.time.localeCompare(b.time))
-                  .map((event) => {
-                    const config = eventTypeConfig[event.type];
-                    const Icon = config.icon;
+              {/* Time grid */}
+              {hours.map((hour) => (
+                <div key={hour} className="grid gap-px bg-border" style={{ gridTemplateColumns: "80px repeat(7, 1fr)" }}>
+                  <div className="bg-muted p-2 text-center text-xs font-medium text-muted-foreground">
+                    {hour}:00
+                  </div>
+                  {weekDays.map((day, dayIdx) => {
+                    const dayEvents = day.events.filter(e => getHourFromEvent(e) === hour);
                     return (
                       <div
-                        key={event.id}
+                        key={dayIdx}
                         className={cn(
-                          "p-3 rounded-md border cursor-pointer hover-elevate flex items-start gap-3",
-                          config.color
+                          "bg-background min-h-[60px] p-1 cursor-pointer hover-elevate border-b border-border",
+                          day.isToday && "bg-accent/5"
                         )}
-                        onClick={() => onEventClick?.(event)}
-                        data-testid={`day-event-${event.id}`}
+                        onClick={() => onAddEvent?.(day.date)}
+                        data-testid={`week-cell-${hour}-${dayIdx}`}
                       >
-                        <Icon className="h-5 w-5 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm">{event.clientName}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {event.time}
-                            {event.installer && ` • ${event.installer}`}
-                          </div>
-                          {event.jobNumber && (
-                            <div className="text-xs text-muted-foreground mt-1 font-mono">
-                              {event.jobNumber}
-                            </div>
-                          )}
+                        <div className="space-y-1">
+                          {dayEvents.map((event) => {
+                            const config = eventTypeConfig[event.type];
+                            const Icon = config.icon;
+                            return (
+                              <div
+                                key={event.id}
+                                className={cn(
+                                  "text-[10px] p-1 rounded flex items-center gap-1 truncate cursor-pointer hover-elevate",
+                                  config.color
+                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEventClick?.(event);
+                                }}
+                                data-testid={`week-event-${event.id}`}
+                              >
+                                <Icon className="h-2.5 w-2.5 flex-shrink-0" />
+                                <span className="truncate text-xs">{event.clientName}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
                   })}
-              </div>
-            ) : (
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {viewMode === "day" && (
+          <div className="space-y-6">
+            {/* Supply Only Section */}
+            <div>
+              <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <Badge variant="outline">Supply Only</Badge>
+                <span className="text-xs text-muted-foreground">
+                  {dayData.events.filter(e => e.jobType === "supply_only").length} events
+                </span>
+              </h3>
+              {dayData.events.filter(e => e.jobType === "supply_only").length > 0 ? (
+                <div className="space-y-2">
+                  {dayData.events
+                    .filter(e => e.jobType === "supply_only")
+                    .sort((a, b) => a.time.localeCompare(b.time))
+                    .map((event) => {
+                      const config = eventTypeConfig[event.type];
+                      const Icon = config.icon;
+                      return (
+                        <div
+                          key={event.id}
+                          className={cn(
+                            "p-3 rounded-md border cursor-pointer hover-elevate flex items-start gap-3",
+                            config.color
+                          )}
+                          onClick={() => onEventClick?.(event)}
+                          data-testid={`day-event-${event.id}`}
+                        >
+                          <Icon className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm">{event.clientName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {event.time}
+                              {event.installer && ` • ${event.installer}`}
+                            </div>
+                            {event.jobNumber && (
+                              <div className="text-xs text-muted-foreground mt-1 font-mono">
+                                {event.jobNumber}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground p-3 border border-dashed rounded-md text-center">
+                  No supply only events
+                </div>
+              )}
+            </div>
+
+            {/* Supply & Install Section */}
+            <div>
+              <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <Badge variant="outline">Supply & Install</Badge>
+                <span className="text-xs text-muted-foreground">
+                  {dayData.events.filter(e => e.jobType === "supply_install").length} events
+                </span>
+              </h3>
+              {dayData.events.filter(e => e.jobType === "supply_install").length > 0 ? (
+                <div className="space-y-2">
+                  {dayData.events
+                    .filter(e => e.jobType === "supply_install")
+                    .sort((a, b) => a.time.localeCompare(b.time))
+                    .map((event) => {
+                      const config = eventTypeConfig[event.type];
+                      const Icon = config.icon;
+                      return (
+                        <div
+                          key={event.id}
+                          className={cn(
+                            "p-3 rounded-md border cursor-pointer hover-elevate flex items-start gap-3",
+                            config.color
+                          )}
+                          onClick={() => onEventClick?.(event)}
+                          data-testid={`day-event-${event.id}`}
+                        >
+                          <Icon className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm">{event.clientName}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {event.time}
+                              {event.installer && ` • ${event.installer}`}
+                            </div>
+                            {event.jobNumber && (
+                              <div className="text-xs text-muted-foreground mt-1 font-mono">
+                                {event.jobNumber}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground p-3 border border-dashed rounded-md text-center">
+                  No supply & install events
+                </div>
+              )}
+            </div>
+
+            {dayData.events.length === 0 && (
               <div className="text-center py-8">
                 <p className="text-sm text-muted-foreground mb-3">No events scheduled for this day</p>
                 <Button onClick={() => onAddEvent?.(dayData.date)} size="sm">
@@ -398,5 +499,3 @@ export function CalendarView({ events, onEventClick, onAddEvent }: CalendarViewP
     </Card>
   );
 }
-
-import { Plus } from "lucide-react";
