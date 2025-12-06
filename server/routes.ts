@@ -21,6 +21,7 @@ import { z } from "zod";
 import Stripe from "stripe";
 import { getTwilioClient, getTwilioFromPhoneNumber, makeOutboundCall, generateTwimlForInbound, generateTwimlForOutbound, getCallRecording } from "./twilio";
 import { processTranscriptUpdate, generateSuggestedResponse } from "./coaching";
+import { initializeMediaStreamServer } from "./deepgram";
 
 type UserRole = "admin" | "sales" | "scheduler" | "production_manager" | "warehouse" | "installer" | "trade_client";
 
@@ -6520,6 +6521,8 @@ export async function registerRoutes(
       const twiml = generateTwimlForInbound({
         greeting: "Thank you for calling Probuild PVC. Connecting you now.",
         webhookBaseUrl,
+        callId: call.id,
+        callSid: CallSid,
       });
 
       res.type('text/xml');
@@ -6533,9 +6536,19 @@ export async function registerRoutes(
   // Twilio outbound call answer webhook
   app.post("/api/twilio/voice/outbound", async (req, res) => {
     try {
+      const { CallSid } = req.body;
       console.log("Outbound call webhook:", req.body);
 
-      const twiml = generateTwimlForOutbound({});
+      const webhookBaseUrl = `${req.protocol}://${req.get('host')}`;
+      
+      // Get the call ID from database using the CallSid
+      const call = await storage.getVoiceCallBySid(CallSid);
+      
+      const twiml = generateTwimlForOutbound({
+        webhookBaseUrl,
+        callId: call?.id,
+        callSid: CallSid,
+      });
 
       res.type('text/xml');
       res.send(twiml);
@@ -6657,6 +6670,13 @@ export async function registerRoutes(
       res.status(500).json({ error: "Failed to generate response" });
     }
   });
+
+  // ============================================
+  // TWILIO MEDIA STREAM WEBSOCKET
+  // ============================================
+
+  // Initialize singleton WebSocket server for Twilio Media Streams
+  initializeMediaStreamServer(httpServer);
 
   return httpServer;
 }

@@ -208,12 +208,24 @@ export async function makeOutboundCall(options: MakeCallOptions): Promise<{ sid:
 export function generateTwimlForInbound(options: {
   greeting?: string;
   webhookBaseUrl: string;
+  callId?: string;
+  callSid?: string;
 }): string {
   const { VoiceResponse } = twilio.twiml;
   const response = new VoiceResponse();
   
   if (options.greeting) {
     response.say({ voice: 'Polly.Matthew' }, options.greeting);
+  }
+
+  // Add Media Stream for real-time transcription if we have call info
+  if (options.callId && options.callSid) {
+    const wsUrl = options.webhookBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    const start = response.start() as any;
+    start.stream({
+      url: `${wsUrl}/api/twilio/media-stream?callSid=${options.callSid}&callId=${options.callId}`,
+      track: 'both_tracks'
+    });
   }
   
   response.dial({
@@ -227,12 +239,25 @@ export function generateTwimlForInbound(options: {
 
 export function generateTwimlForOutbound(options: {
   greeting?: string;
+  webhookBaseUrl?: string;
+  callId?: string;
+  callSid?: string;
 }): string {
   const { VoiceResponse } = twilio.twiml;
   const response = new VoiceResponse();
   
   if (options.greeting) {
     response.say({ voice: 'Polly.Matthew' }, options.greeting);
+  }
+
+  // Add Media Stream for real-time transcription if we have call info
+  if (options.callId && options.callSid && options.webhookBaseUrl) {
+    const wsUrl = options.webhookBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+    const start = response.start() as any;
+    start.stream({
+      url: `${wsUrl}/api/twilio/media-stream?callSid=${options.callSid}&callId=${options.callId}`,
+      track: 'both_tracks'
+    });
   }
 
   return response.toString();
