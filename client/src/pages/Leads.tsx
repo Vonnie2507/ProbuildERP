@@ -1339,12 +1339,15 @@ function mapStageToStatus(stage: string): LeadStatus {
     case "contacted":
     case "site_visit_scheduled":
     case "site_visit_complete":
+    case "needs_quote":
       return "contacted";
     case "quote_sent":
     case "quote_revised":
+    case "follow_up":
       return "quoted";
     case "approved":
     case "converted_to_job":
+    case "won":
       return "approved";
     case "declined":
     case "lost":
