@@ -65,6 +65,15 @@ The system employs a modern web architecture with a clear separation of concerns
     -   Stage progress visualization with Lucide icons showing completion state
     -   Stage complexity varies by job type: supply_install (5 or 8 stages with gate), supply_only (4 stages)
     -   Components: JobKanbanBoard.tsx, JobKanbanCard.tsx, JobStageProgress.tsx, ViewToggle.tsx
+-   **Automatic Soil Type Detection:** When creating a new lead:
+    -   User enters address and selects from Google Maps autocomplete
+    -   System automatically geocodes address to get latitude/longitude
+    -   Calls CSIRO ASRIS API to fetch detailed soil information
+    -   Returns soil type (limestone, clay, gravel, sand, rock), installation notes, and geology warnings
+    -   Displays soil information preview in the lead form before saving
+    -   Saves soil type and installation notes to lead record in database
+    -   LIMESTONE zones trigger special warning due to drilling requirements
+    -   Soil types display on lead cards with LIMESTONE in red badge, others as gray text
 
 **System Design Choices:**
 -   **API:** All endpoints are prefixed with `/api/` and support standard CRUD operations.
