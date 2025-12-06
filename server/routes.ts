@@ -5889,5 +5889,104 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================
+  // KANBAN COLUMNS CONFIGURATION
+  // ============================================
+
+  // Get all kanban columns
+  app.get("/api/kanban-columns", async (req, res) => {
+    try {
+      const columns = await storage.getKanbanColumns();
+      res.json(columns);
+    } catch (error) {
+      console.error("Error fetching kanban columns:", error);
+      res.status(500).json({ error: "Failed to fetch kanban columns" });
+    }
+  });
+
+  // Get single kanban column
+  app.get("/api/kanban-columns/:id", async (req, res) => {
+    try {
+      const column = await storage.getKanbanColumn(req.params.id);
+      if (!column) {
+        return res.status(404).json({ error: "Kanban column not found" });
+      }
+      res.json(column);
+    } catch (error) {
+      console.error("Error fetching kanban column:", error);
+      res.status(500).json({ error: "Failed to fetch kanban column" });
+    }
+  });
+
+  // Create kanban column
+  app.post("/api/kanban-columns", requireRoles("admin"), async (req, res) => {
+    try {
+      const { title, statuses, defaultStatus, color, isActive } = req.body;
+      if (!title || !statuses || !defaultStatus || !color) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      const column = await storage.createKanbanColumn({
+        title,
+        statuses,
+        defaultStatus,
+        color,
+        isActive: isActive ?? true
+      });
+      res.status(201).json(column);
+    } catch (error) {
+      console.error("Error creating kanban column:", error);
+      res.status(500).json({ error: "Failed to create kanban column" });
+    }
+  });
+
+  // Update kanban column
+  app.patch("/api/kanban-columns/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { title, statuses, defaultStatus, color, isActive, sortOrder } = req.body;
+      const column = await storage.updateKanbanColumn(req.params.id, {
+        title,
+        statuses,
+        defaultStatus,
+        color,
+        isActive,
+        sortOrder
+      });
+      if (!column) {
+        return res.status(404).json({ error: "Kanban column not found" });
+      }
+      res.json(column);
+    } catch (error) {
+      console.error("Error updating kanban column:", error);
+      res.status(500).json({ error: "Failed to update kanban column" });
+    }
+  });
+
+  // Delete kanban column
+  app.delete("/api/kanban-columns/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      await storage.deleteKanbanColumn(req.params.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting kanban column:", error);
+      res.status(500).json({ error: "Failed to delete kanban column" });
+    }
+  });
+
+  // Reorder kanban columns
+  app.post("/api/kanban-columns/reorder", requireRoles("admin"), async (req, res) => {
+    try {
+      const { columnIds } = req.body;
+      if (!Array.isArray(columnIds)) {
+        return res.status(400).json({ error: "columnIds must be an array" });
+      }
+      await storage.reorderKanbanColumns(columnIds);
+      const columns = await storage.getKanbanColumns();
+      res.json(columns);
+    } catch (error) {
+      console.error("Error reordering kanban columns:", error);
+      res.status(500).json({ error: "Failed to reorder kanban columns" });
+    }
+  });
+
   return httpServer;
 }
