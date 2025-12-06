@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, Mail, MapPin, Clock, MoreHorizontal, Pencil, Trash2, ClipboardList, Send, FileText, AlertTriangle, Mountain, Pickaxe, Shovel } from "lucide-react";
+import { Phone, Mail, MapPin, Clock, MoreHorizontal, Pencil, Trash2, ClipboardList, Send, FileText, Pickaxe } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,11 +23,11 @@ interface QuoteInfo {
   approved: number;
 }
 
-// Soil warning badge - only LIMESTONE is red, all others are normal gray
-function SoilWarningBadge({ warning }: { warning: string }) {
+// Soil warning display - only LIMESTONE is red badge, all others are gray text
+function SoilWarningDisplay({ warning }: { warning: string }) {
   const warningUpper = warning.toUpperCase();
   
-  // Only LIMESTONE gets red/destructive styling
+  // Only LIMESTONE gets red/destructive badge styling
   if (warningUpper.includes("LIMESTONE")) {
     return (
       <Badge variant="destructive" className="h-5 px-1.5 text-[10px] gap-1">
@@ -37,12 +37,9 @@ function SoilWarningBadge({ warning }: { warning: string }) {
     );
   }
   
-  // All other soil types - normal gray styling
+  // All other soil types - plain gray text
   return (
-    <Badge variant="secondary" className="h-5 px-1.5 text-[10px] gap-1">
-      <Mountain className="h-3 w-3" />
-      {warningUpper}
-    </Badge>
+    <span className="text-xs text-muted-foreground">{warningUpper}</span>
   );
 }
 
@@ -178,7 +175,7 @@ export function LeadCard({
             <Tooltip>
               <TooltipTrigger asChild>
                 <div className="flex items-center gap-1.5 mt-1" data-testid={`soil-warning-${lead.id}`}>
-                  <SoilWarningBadge warning={lead.soilWarning} />
+                  <SoilWarningDisplay warning={lead.soilWarning} />
                 </div>
               </TooltipTrigger>
               <TooltipContent side="top" className="max-w-xs">
