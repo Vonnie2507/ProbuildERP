@@ -142,7 +142,7 @@ export function JobKanbanBoard({
     return (
       <div className="flex gap-4 p-4 overflow-x-auto">
         {KANBAN_COLUMNS.map((column) => (
-          <div key={column.id} className="flex-shrink-0 w-72">
+          <div key={column.id} className="flex-shrink-0 w-80">
             <Card className="h-full">
               <CardHeader className="pb-2">
                 <Skeleton className="h-6 w-32" />
@@ -173,7 +173,7 @@ export function JobKanbanBoard({
           return (
             <div 
               key={column.id} 
-              className="flex-shrink-0 w-72"
+              className="flex-shrink-0 w-80"
               data-testid={`kanban-column-${column.id}`}
               onDragOver={(e) => handleDragOver(e, column.id)}
               onDragLeave={handleDragLeave}
