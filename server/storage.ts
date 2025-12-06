@@ -634,6 +634,29 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(clients).where(eq(clients.clientType, clientType as any)).orderBy(clients.name);
   }
 
+  async checkClientDuplicates(name?: string, email?: string, phone?: string): Promise<Client[]> {
+    const conditions = [];
+    
+    if (name && name.trim()) {
+      conditions.push(ilike(clients.name, `%${name.trim()}%`));
+    }
+    if (email && email.trim()) {
+      conditions.push(ilike(clients.email, `%${email.trim()}%`));
+    }
+    if (phone && phone.trim()) {
+      const normalizedPhone = phone.replace(/\D/g, '');
+      if (normalizedPhone.length >= 6) {
+        conditions.push(sql`REPLACE(REPLACE(REPLACE(${clients.phone}, ' ', ''), '-', ''), '+', '') LIKE ${'%' + normalizedPhone + '%'}`);
+      }
+    }
+    
+    if (conditions.length === 0) {
+      return [];
+    }
+    
+    return db.select().from(clients).where(or(...conditions)).limit(5);
+  }
+
   async createClient(client: InsertClient): Promise<Client> {
     const [created] = await db.insert(clients).values(client).returning();
     return created;

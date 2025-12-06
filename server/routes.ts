@@ -520,6 +520,17 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/clients/check-duplicate", requireRoles("admin", "sales", "scheduler", "production_manager"), async (req, res) => {
+    try {
+      const { name, email, phone } = req.body;
+      const duplicates = await storage.checkClientDuplicates(name, email, phone);
+      res.json({ duplicates });
+    } catch (error) {
+      console.error("Error checking client duplicates:", error);
+      res.status(500).json({ error: "Failed to check duplicates" });
+    }
+  });
+
   app.post("/api/clients", requireRoles("admin", "sales"), async (req, res) => {
     try {
       const validatedData = insertClientSchema.parse(req.body);
