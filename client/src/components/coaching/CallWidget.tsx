@@ -61,7 +61,7 @@ export function CallWidget() {
 
   const makeCallMutation = useMutation({
     mutationFn: async (toNumber: string) => {
-      const response = await apiRequest("POST", "/api/voice-calls/outbound", { toNumber });
+      const response = await apiRequest("POST", "/api/voice/call", { phoneNumber: toNumber });
       return response.json();
     },
     onSuccess: () => {

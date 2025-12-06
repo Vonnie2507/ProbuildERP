@@ -6500,6 +6500,37 @@ export async function registerRoutes(
     }
   });
 
+  // End/hangup a call
+  app.post("/api/voice-calls/:id/hangup", requireAuth, async (req, res) => {
+    try {
+      const call = await storage.getVoiceCall(req.params.id);
+      if (!call) {
+        return res.status(404).json({ error: "Call not found" });
+      }
+
+      if (call.twilioCallSid) {
+        try {
+          const twilioClient = await getTwilioClient();
+          if (twilioClient) {
+            await twilioClient.calls(call.twilioCallSid).update({ status: 'completed' });
+          }
+        } catch (twilioError: any) {
+          console.log("Twilio hangup error (may already be ended):", twilioError.message);
+        }
+      }
+
+      await storage.updateVoiceCall(call.id, { 
+        status: "completed",
+        endedAt: new Date(),
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error hanging up call:", error);
+      res.status(500).json({ error: "Failed to hang up call" });
+    }
+  });
+
   // Twilio inbound call webhook
   app.post("/api/twilio/voice/inbound", async (req, res) => {
     try {
