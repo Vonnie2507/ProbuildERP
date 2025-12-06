@@ -23,52 +23,25 @@ interface QuoteInfo {
   approved: number;
 }
 
-// Soil warning badge with appropriate styling based on warning type
+// Soil warning badge - only LIMESTONE is red, all others are normal gray
 function SoilWarningBadge({ warning }: { warning: string }) {
   const warningUpper = warning.toUpperCase();
   
-  // Determine color and icon based on warning type
-  if (warningUpper.includes("LIMESTONE") || warningUpper.includes("ROCK")) {
+  // Only LIMESTONE gets red/destructive styling
+  if (warningUpper.includes("LIMESTONE")) {
     return (
       <Badge variant="destructive" className="h-5 px-1.5 text-[10px] gap-1">
         <Pickaxe className="h-3 w-3" />
-        {warningUpper.includes("LIMESTONE") ? "LIMESTONE" : "ROCK"}
+        LIMESTONE
       </Badge>
     );
   }
   
-  if (warningUpper.includes("CLAY")) {
-    return (
-      <Badge className="h-5 px-1.5 text-[10px] gap-1 bg-amber-600 hover:bg-amber-700 text-white">
-        <Mountain className="h-3 w-3" />
-        CLAY
-      </Badge>
-    );
-  }
-  
-  if (warningUpper.includes("GRAVEL")) {
-    return (
-      <Badge className="h-5 px-1.5 text-[10px] gap-1 bg-orange-500 hover:bg-orange-600 text-white">
-        <AlertTriangle className="h-3 w-3" />
-        GRAVEL
-      </Badge>
-    );
-  }
-  
-  if (warningUpper.includes("SAND")) {
-    return (
-      <Badge className="h-5 px-1.5 text-[10px] gap-1 bg-green-600 hover:bg-green-700 text-white">
-        <Shovel className="h-3 w-3" />
-        EASY
-      </Badge>
-    );
-  }
-  
-  // Default for other warnings
+  // All other soil types - normal gray styling
   return (
     <Badge variant="secondary" className="h-5 px-1.5 text-[10px] gap-1">
       <Mountain className="h-3 w-3" />
-      {warning.length > 10 ? warning.substring(0, 10) + "..." : warning}
+      {warningUpper}
     </Badge>
   );
 }
@@ -136,23 +109,6 @@ export function LeadCard({
                 {lead.jobFulfillmentType === "supply_install" ? "S+I" : "Supply"}
               </Badge>
             )}
-            {lead.soilWarning && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div data-testid={`soil-warning-badge-${lead.id}`}>
-                    <SoilWarningBadge warning={lead.soilWarning} />
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-sm">
-                  <div className="space-y-1">
-                    <p className="font-semibold text-xs">Soil Type: {lead.soilWarning.toUpperCase()}</p>
-                    {lead.soilInstallNotes && (
-                      <p className="text-xs">{lead.soilInstallNotes}</p>
-                    )}
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            )}
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -218,6 +174,18 @@ export function LeadCard({
             <MapPin className="h-3 w-3" />
             <span className="truncate">{lead.address}</span>
           </div>
+          {lead.soilWarning && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="flex items-center gap-1.5 mt-1" data-testid={`soil-warning-${lead.id}`}>
+                  <SoilWarningBadge warning={lead.soilWarning} />
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs">
+                <p className="text-xs">{lead.soilInstallNotes || lead.soilWarning}</p>
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
 
         <div className="flex items-center justify-between pt-3 border-t">
