@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Phone, PhoneOff, PhoneIncoming, Minimize2, Maximize2, X, Mic, MicOff, Sparkles, CheckCircle2, Circle, ChevronDown, ChevronUp } from "lucide-react";
+import { Phone, PhoneOff, PhoneIncoming, Minimize2, Maximize2, X, Mic, Sparkles, CheckCircle2, Circle, ChevronDown, ChevronUp, Headphones } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,7 +18,7 @@ interface CallData {
 
 export function CallWidget() {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true);
   const [activeCallId, setActiveCallId] = useState<string | null>(null);
   const [showChecklist, setShowChecklist] = useState(true);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
@@ -48,25 +48,24 @@ export function CallWidget() {
   });
 
   useEffect(() => {
-    if (activeCalls.length > 0 && !activeCallId) {
+    if (activeCalls.length > 0) {
       const inProgress = activeCalls.find(c => c.status === "in_progress");
       const ringing = activeCalls.find(c => c.status === "ringing");
-      setActiveCallId(inProgress?.id || ringing?.id || activeCalls[0].id);
-      setIsMinimized(false);
-    } else if (activeCalls.length === 0 && activeCallId) {
-      setTimeout(() => setActiveCallId(null), 5000);
+      const newActiveId = inProgress?.id || ringing?.id || activeCalls[0].id;
+      setActiveCallId(newActiveId);
+      if (ringing || inProgress) {
+        setIsMinimized(false);
+      }
+    } else {
+      setActiveCallId(null);
     }
-  }, [activeCalls, activeCallId]);
+  }, [activeCalls]);
 
   useEffect(() => {
     if (transcriptEndRef.current) {
       transcriptEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [callData?.transcripts]);
-
-  if (!activeCallId && activeCalls.length === 0) {
-    return null;
-  }
 
   const activeCall = callData?.call || activeCalls.find(c => c.id === activeCallId);
   const transcripts = callData?.transcripts || [];
@@ -76,6 +75,7 @@ export function CallWidget() {
   const unacknowledgedPrompts = coachingPrompts.filter(p => !p.wasAcknowledged);
   const coveredCount = checklistStatus.filter(s => s.isCovered).length;
   const totalChecklist = checklistItems.length;
+  const hasActiveCall = !!activeCall;
 
   if (isMinimized) {
     return (
@@ -87,14 +87,18 @@ export function CallWidget() {
           size="lg" 
           className={cn(
             "rounded-full h-14 w-14 shadow-lg",
-            activeCall?.status === "ringing" && "animate-pulse bg-green-600 hover:bg-green-700"
+            activeCall?.status === "ringing" && "animate-pulse bg-green-600 hover:bg-green-700",
+            activeCall?.status === "in_progress" && "bg-green-600 hover:bg-green-700"
           )}
           onClick={() => setIsMinimized(false)}
+          data-testid="button-open-widget"
         >
           {activeCall?.status === "ringing" ? (
             <PhoneIncoming className="h-6 w-6" />
-          ) : (
+          ) : activeCall?.status === "in_progress" ? (
             <Phone className="h-6 w-6" />
+          ) : (
+            <Headphones className="h-6 w-6" />
           )}
         </Button>
         {unacknowledgedPrompts.length > 0 && (
@@ -104,6 +108,9 @@ export function CallWidget() {
           >
             {unacknowledgedPrompts.length}
           </Badge>
+        )}
+        {hasActiveCall && (
+          <div className="absolute -top-1 -left-1 w-3 h-3 bg-green-500 rounded-full animate-pulse" />
         )}
       </div>
     );
@@ -127,12 +134,20 @@ export function CallWidget() {
             {activeCall?.status === "ringing" && (
               <PhoneIncoming className="w-4 h-4 text-green-600 animate-bounce" />
             )}
+            {!activeCall && (
+              <Headphones className="w-4 h-4 text-muted-foreground" />
+            )}
             <span className="font-medium text-sm">
-              {activeCall?.direction === "inbound" ? "Incoming" : "Outgoing"} Call
+              {activeCall 
+                ? `${activeCall.direction === "inbound" ? "Incoming" : "Outgoing"} Call`
+                : "Call Coach"
+              }
             </span>
-            <span className="text-xs text-muted-foreground">
-              {activeCall?.direction === "inbound" ? activeCall?.fromNumber : activeCall?.toNumber}
-            </span>
+            {activeCall && (
+              <span className="text-xs text-muted-foreground">
+                {activeCall.direction === "inbound" ? activeCall.fromNumber : activeCall.toNumber}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <Button 
@@ -192,7 +207,7 @@ export function CallWidget() {
             onClick={() => setShowChecklist(!showChecklist)}
           >
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium">Checklist</span>
+              <span className="text-xs font-medium">Sales Checklist</span>
               <Badge variant="secondary" className="text-xs">
                 {coveredCount}/{totalChecklist}
               </Badge>
@@ -234,7 +249,13 @@ export function CallWidget() {
 
           <ScrollArea className="flex-1 px-3 py-2">
             <div className="space-y-2">
-              {transcripts.length === 0 ? (
+              {!activeCall ? (
+                <div className="text-center text-muted-foreground text-sm py-8">
+                  <Phone className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p>No active call</p>
+                  <p className="text-xs">Start a call to see live transcription</p>
+                </div>
+              ) : transcripts.length === 0 ? (
                 <div className="text-center text-muted-foreground text-sm py-8">
                   <Mic className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   <p>Waiting for conversation...</p>
@@ -299,7 +320,7 @@ export function CallWidget() {
             </Button>
           )}
           {!activeCall && (
-            <span className="text-sm text-muted-foreground">Call ended</span>
+            <span className="text-sm text-muted-foreground">Ready for calls</span>
           )}
         </div>
       </div>
