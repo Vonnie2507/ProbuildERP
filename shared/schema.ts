@@ -40,7 +40,8 @@ export const leadSourceEnum = pgEnum("lead_source", [
   "trade",
   "walk_in",
   "social_media",
-  "other"
+  "other",
+  "direct_job"
 ]);
 
 export const quoteStatusEnum = pgEnum("quote_status", [
