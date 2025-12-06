@@ -284,6 +284,12 @@ export const leads = pgTable("leads", {
   // Opportunity value tracking
   opportunityValue: decimal("opportunity_value", { precision: 10, scale: 2 }),
   primaryQuoteId: varchar("primary_quote_id"), // References quotes.id - no FK to avoid circular ref
+  // Analytics timestamp fields for KPI tracking
+  firstResponseAt: timestamp("first_response_at"), // When lead was first contacted
+  quoteSentAt: timestamp("quote_sent_at"), // When first quote was sent
+  wonAt: timestamp("won_at"), // When lead was converted to job
+  lostAt: timestamp("lost_at"), // When lead was marked as lost
+  lostReason: text("lost_reason"), // Reason for losing the lead
   // Soil/site assessment data
   soilWarning: text("soil_warning"), // Short label: LIMESTONE, CLAY, ROCK, etc.
   soilInstallNotes: text("soil_install_notes"), // Full installation notes
