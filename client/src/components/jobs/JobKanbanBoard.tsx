@@ -160,8 +160,8 @@ export function JobKanbanBoard({
   }
 
   return (
-    <div className="w-full p-4" data-testid="kanban-board">
-      <div className="grid grid-cols-5 gap-4 min-w-0">
+    <div className="w-full p-4 overflow-x-auto" data-testid="kanban-board">
+      <div className="grid grid-cols-5 gap-4" style={{ minWidth: '1200px' }}>
         {KANBAN_COLUMNS.map((column) => {
           const columnJobs = getJobsForColumn(column);
           const columnTotal = columnJobs.reduce(
