@@ -201,40 +201,41 @@ export function LeadCard({
             <span className="text-xs text-muted-foreground">{lead.assignedTo.name}</span>
           </div>
           <div className="flex items-center gap-2">
-            {(lead.hasUnreadMessages || lead.isAssigned) && (
+            {lead.isAssigned && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="flex items-center" data-testid={`message-indicator-${lead.id}`}>
-                    {lead.hasUnreadMessages ? (
-                      <Badge variant="default" className="h-5 w-5 p-0 flex items-center justify-center bg-primary">
-                        <MessageSquare className="h-3 w-3" />
-                      </Badge>
-                    ) : lead.isAssigned ? (
-                      <Badge variant="secondary" className="h-5 w-5 p-0 flex items-center justify-center">
-                        <User className="h-3 w-3" />
-                      </Badge>
-                    ) : null}
+                  <div className="flex items-center" data-testid={`assigned-indicator-${lead.id}`}>
+                    <Badge variant="secondary" className="h-5 w-5 p-0 flex items-center justify-center">
+                      <User className="h-3 w-3" />
+                    </Badge>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {lead.hasUnreadMessages ? "Message waiting for reply" : "Assigned to staff"}
+                  <p className="font-semibold">Staff Assigned</p>
+                  <p className="text-muted-foreground text-xs">
+                    This lead has a staff member assigned to manage it
+                  </p>
                 </TooltipContent>
               </Tooltip>
             )}
             {lead.hasPendingTasks && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Badge 
-                    variant="outline" 
-                    className="h-5 px-1.5 text-[10px] gap-0.5 border-warning text-warning"
-                    data-testid={`task-indicator-${lead.id}`}
-                  >
-                    <CheckSquare className="h-3 w-3" />
-                    {lead.pendingTaskCount || 0}
-                  </Badge>
+                  <div data-testid={`task-indicator-${lead.id}`}>
+                    <Badge 
+                      variant="outline" 
+                      className="h-5 px-1.5 text-[10px] gap-0.5 border-warning text-warning"
+                    >
+                      <CheckSquare className="h-3 w-3" />
+                      {lead.pendingTaskCount || 0}
+                    </Badge>
+                  </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  {lead.pendingTaskCount} pending task{lead.pendingTaskCount !== 1 ? 's' : ''}
+                  <p className="font-semibold">Pending Tasks</p>
+                  <p className="text-muted-foreground text-xs">
+                    {lead.pendingTaskCount} task{lead.pendingTaskCount !== 1 ? 's' : ''} need{lead.pendingTaskCount === 1 ? 's' : ''} to be completed
+                  </p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -266,11 +267,11 @@ export function LeadCard({
                   </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{lead.quoteInfo.total} quote{lead.quoteInfo.total !== 1 ? 's' : ''}</p>
-                  {lead.quoteInfo.drafts > 0 && <p>{lead.quoteInfo.drafts} draft{lead.quoteInfo.drafts !== 1 ? 's' : ''}</p>}
-                  {lead.quoteInfo.sent > 0 && <p>{lead.quoteInfo.sent} sent</p>}
-                  {lead.quoteInfo.failed > 0 && <p>{lead.quoteInfo.failed} failed to send</p>}
-                  {lead.quoteInfo.approved > 0 && <p>{lead.quoteInfo.approved} approved</p>}
+                  <p className="font-semibold mb-1">Quote Status</p>
+                  {lead.quoteInfo.approved > 0 && <p className="text-success">✓ {lead.quoteInfo.approved} quote{lead.quoteInfo.approved !== 1 ? 's' : ''} approved</p>}
+                  {lead.quoteInfo.sent > 0 && <p className="text-warning">↗ {lead.quoteInfo.sent} quote{lead.quoteInfo.sent !== 1 ? 's' : ''} sent to customer</p>}
+                  {lead.quoteInfo.failed > 0 && <p className="text-destructive">✗ {lead.quoteInfo.failed} quote{lead.quoteInfo.failed !== 1 ? 's' : ''} failed to send</p>}
+                  {lead.quoteInfo.drafts > 0 && <p className="text-muted-foreground">◦ {lead.quoteInfo.drafts} draft{lead.quoteInfo.drafts !== 1 ? 's' : ''} (not sent yet)</p>}
                 </TooltipContent>
               </Tooltip>
             )}
