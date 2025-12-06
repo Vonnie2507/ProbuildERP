@@ -572,8 +572,8 @@ export default function Leads() {
       // Include soil/site data
       soilWarning: soilData.warning,
       soilInstallNotes: soilData.notes,
-      siteLatitude: siteCoordinates?.lat || null,
-      siteLongitude: siteCoordinates?.lng || null,
+      siteLatitude: siteCoordinates?.lat?.toString() || null,
+      siteLongitude: siteCoordinates?.lng?.toString() || null,
     } as any);
   };
 
