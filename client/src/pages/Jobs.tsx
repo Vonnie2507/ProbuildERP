@@ -56,7 +56,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Job, Client, ProductionTask, User } from "@shared/schema";
+import type { Job, Client, ProductionTask, User, JobPipeline, JobPipelineStage, JobStageCompletion } from "@shared/schema";
 import { Plus, UserPlus } from "lucide-react";
 import { DialogTrigger } from "@/components/ui/dialog";
 import { CreateClientDialog } from "@/components/clients/CreateClientDialog";
@@ -117,6 +117,47 @@ export default function Jobs() {
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
+  });
+
+  const { data: pipelines = [] } = useQuery<JobPipeline[]>({
+    queryKey: ["/api/job-pipelines"],
+  });
+
+  // Get the raw job for pipeline lookup
+  const rawSelectedJob = selectedJobId ? jobs.find(j => j.id === selectedJobId) : null;
+  const selectedPipelineId = rawSelectedJob?.pipelineId;
+
+  // Fetch stages for the selected job's pipeline
+  const { data: pipelineStages = [] } = useQuery<JobPipelineStage[]>({
+    queryKey: ["/api/job-pipelines", selectedPipelineId, "stages"],
+    enabled: !!selectedPipelineId,
+  });
+
+  // Fetch stage completions for the selected job
+  const { data: stageCompletions = [] } = useQuery<JobStageCompletion[]>({
+    queryKey: ["/api/jobs", selectedJobId, "stage-completions"],
+    enabled: !!selectedJobId,
+  });
+
+  const [loadingStageId, setLoadingStageId] = useState<string | null>(null);
+
+  const toggleStageMutation = useMutation({
+    mutationFn: async ({ jobId, stageId }: { jobId: string; stageId: string }) => {
+      setLoadingStageId(stageId);
+      return apiRequest("POST", `/api/jobs/${jobId}/stage-completions/${stageId}/toggle`);
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", variables.jobId, "stage-completions"] });
+      setLoadingStageId(null);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update stage",
+        variant: "destructive",
+      });
+      setLoadingStageId(null);
+    },
   });
 
   const updateJobMutation = useMutation({
@@ -319,49 +360,26 @@ export default function Jobs() {
     ? productionTasks.filter(t => t.jobId === selectedJob.id)
     : [];
 
-  const timelineEvents = selectedJob ? [
-    { 
-      id: "1", 
-      title: "Quote Accepted", 
-      description: "Client approved quote and paid deposit", 
-      date: "Started",
-      status: (selectedJob.depositPaid ? "complete" : "pending") as "complete" | "current" | "pending"
-    },
-    { 
-      id: "2", 
-      title: "Cutting", 
-      description: "Posts and rails cut to size",
-      date: "",
-      status: getTaskStatus(jobTasks, "cutting")
-    },
-    { 
-      id: "3", 
-      title: "Routing", 
-      description: "Routing and shaping completed",
-      date: "",
-      status: getTaskStatus(jobTasks, "routing")
-    },
-    { 
-      id: "4", 
-      title: "Assembly", 
-      description: "Panels being assembled",
-      date: "",
-      status: getTaskStatus(jobTasks, "assembly")
-    },
-    { 
-      id: "5", 
-      title: "QA Check", 
-      description: "Quality assurance inspection",
-      date: "",
-      status: getTaskStatus(jobTasks, "qa")
-    },
-    { 
-      id: "6", 
-      title: "Ready for Install/Pickup", 
-      date: "",
-      status: (selectedJob.status === "ready" || selectedJob.status === "scheduled" || selectedJob.status === "complete" ? "complete" : "pending") as "complete" | "current" | "pending"
-    },
-  ] : [];
+  // Build timeline stages from pipeline stages and completions
+  const completionMap = new Map(stageCompletions.map(c => [c.stageId, c]));
+  const timelineStages = pipelineStages
+    .filter(stage => stage.isActive)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(stage => {
+      const completion = completionMap.get(stage.id);
+      return {
+        id: stage.id,
+        title: stage.name,
+        icon: stage.icon || undefined,
+        isCompleted: !!completion,
+        completedAt: completion?.completedAt ? String(completion.completedAt) : undefined,
+      };
+    });
+
+  const handleToggleStage = (stageId: string) => {
+    if (!selectedJobId) return;
+    toggleStageMutation.mutate({ jobId: selectedJobId, stageId });
+  };
 
   const filteredJobs = displayJobs.filter(
     (job) =>
@@ -685,7 +703,24 @@ export default function Jobs() {
               </TabsContent>
 
               <TabsContent value="timeline" className="mt-6">
-                <JobTimeline events={timelineEvents} />
+                {timelineStages.length > 0 ? (
+                  <JobTimeline 
+                    stages={timelineStages} 
+                    onToggleStage={handleToggleStage}
+                    isLoading={toggleStageMutation.isPending}
+                    loadingStageId={loadingStageId}
+                  />
+                ) : (
+                  <Card>
+                    <CardContent className="py-8 text-center text-muted-foreground">
+                      {!selectedPipelineId ? (
+                        <p>No pipeline assigned to this job. Assign a pipeline in Job Stage Configuration.</p>
+                      ) : (
+                        <p>No stages configured for this pipeline.</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
               </TabsContent>
 
               {selectedJob.jobType === "supply_install" && (
