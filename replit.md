@@ -43,6 +43,16 @@ The system employs a modern web architecture with a clear separation of concerns
     -   Hidden leads appear in analytics (lead counts, win rates, source reporting)
     -   Can be filtered out using lead_source if only "normal" leads are needed
     -   Job and Lead share the same base ID (PVC-XXX → PVC-XXX-JOB)
+-   **Inline Client Creation:** When creating a new job, users can create clients on-the-fly:
+    -   UserPlus button next to client dropdown opens CreateClientDialog
+    -   Real-time duplicate detection checks name, email, and phone as user types
+    -   Red warning banner shows when similar clients are found
+    -   Click to view existing client card without closing the dialog
+    -   "Use This Client" button to select existing client instead of creating new
+    -   "Not This Client" button to dismiss and continue creating new client
+    -   Race condition handling prevents stale API results from appearing
+    -   Components: CreateClientDialog.tsx, use-debounce.ts hook
+    -   API: POST /api/clients/check-duplicate, checkClientDuplicates() storage method
 -   **Role-Based Access Control:** Comprehensive RBAC implementation with:
     -   7 distinct user roles: admin, sales, scheduler, production_manager, warehouse, installer, trade_client
     -   Centralized permissions configuration in `client/src/lib/permissions.ts`
