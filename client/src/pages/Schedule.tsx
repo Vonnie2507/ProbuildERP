@@ -801,7 +801,7 @@ export default function Schedule() {
                 {selectedEvent.assignedTo && (
                   <div className="flex items-center gap-2 text-sm">
                     <Wrench className="h-4 w-4 text-muted-foreground" />
-                    <span>Assigned: {getInstallerName(selectedEvent.assignedTo)}</span>
+                    <span>Assigned: {getInstallerInfo(selectedEvent.assignedTo).fullName}</span>
                   </div>
                 )}
                 
