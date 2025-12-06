@@ -19,7 +19,7 @@ import {
 } from "@shared/schema";
 import { z } from "zod";
 import Stripe from "stripe";
-import { getTwilioClient, getTwilioFromPhoneNumber, makeOutboundCall, generateTwimlForInbound, generateTwimlForOutbound, getCallRecording } from "./twilio";
+import { getTwilioClient, getTwilioFromPhoneNumber, makeOutboundCall, generateTwimlForInbound, generateTwimlForOutbound, getCallRecording, generateVoiceToken, isVoiceSdkConfigured } from "./twilio";
 import { processTranscriptUpdate, generateSuggestedResponse } from "./coaching";
 import { initializeMediaStreamServer } from "./deepgram";
 
@@ -6457,6 +6457,38 @@ export async function registerRoutes(
   // TWILIO VOICE WEBHOOKS
   // ============================================
 
+  // Get Voice SDK token for browser-based calling
+  app.get("/api/voice/token", requireAuth, async (req, res) => {
+    try {
+      const userId = req.session?.userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
+      const isConfigured = await isVoiceSdkConfigured();
+      if (!isConfigured) {
+        return res.json({ 
+          configured: false,
+          message: "Voice SDK not configured. Set TWILIO_API_KEY, TWILIO_API_SECRET, and TWILIO_TWIML_APP_SID"
+        });
+      }
+
+      const token = await generateVoiceToken(userId);
+      if (!token) {
+        return res.status(500).json({ error: "Failed to generate voice token" });
+      }
+
+      res.json({ 
+        configured: true,
+        token,
+        identity: userId
+      });
+    } catch (error) {
+      console.error("Error generating voice token:", error);
+      res.status(500).json({ error: "Failed to generate voice token" });
+    }
+  });
+
   // Initiate outbound call
   app.post("/api/voice/call", requireAuth, async (req, res) => {
     try {
@@ -6564,29 +6596,80 @@ export async function registerRoutes(
     }
   });
 
-  // Twilio outbound call answer webhook
+  // Twilio outbound call answer webhook (also handles TwiML App for Voice SDK)
   app.post("/api/twilio/voice/outbound", async (req, res) => {
     try {
-      const { CallSid } = req.body;
-      console.log("Outbound call webhook:", req.body);
+      const { CallSid, To, From, Caller } = req.body;
+      console.log("Outbound/TwiML App webhook:", req.body);
 
       const webhookBaseUrl = `${req.protocol}://${req.get('host')}`;
+      const VoiceResponse = require('twilio').twiml.VoiceResponse;
+      const response = new VoiceResponse();
       
-      // Get the call ID from database using the CallSid
-      const call = await storage.getVoiceCallBySid(CallSid);
-      
-      const twiml = generateTwimlForOutbound({
-        webhookBaseUrl,
-        callId: call?.id,
-        callSid: CallSid,
-      });
+      // If To parameter exists, this is from the Voice SDK making an outbound call
+      if (To && To.startsWith('+')) {
+        // Voice SDK call - dial the actual phone number
+        console.log(`Voice SDK dialing: ${To}`);
+        
+        // Create call record in database
+        const call = await storage.createVoiceCall({
+          twilioCallSid: CallSid,
+          direction: "outbound",
+          status: "ringing",
+          fromNumber: From || Caller || "",
+          toNumber: To,
+        });
+        
+        await storage.initializeCallChecklistStatus(call.id);
+        
+        // Set up media stream for transcription
+        const wsUrl = webhookBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+        const start = response.start() as any;
+        start.stream({
+          url: `${wsUrl}/api/twilio/media-stream?callSid=${CallSid}&callId=${call.id}`,
+          track: 'both_tracks'
+        });
+        
+        // Dial the destination number
+        const dial = response.dial({
+          callerId: From || await getTwilioFromPhoneNumber(),
+          record: 'record-from-answer-dual',
+          recordingStatusCallback: `${webhookBaseUrl}/api/twilio/voice/recording`,
+          recordingStatusCallbackMethod: 'POST',
+        });
+        dial.number(To);
+      } else {
+        // Legacy API-initiated call - just set up media stream
+        const call = await storage.getVoiceCallBySid(CallSid);
+        
+        if (call) {
+          const wsUrl = webhookBaseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+          const start = response.start() as any;
+          start.stream({
+            url: `${wsUrl}/api/twilio/media-stream?callSid=${CallSid}&callId=${call.id}`,
+            track: 'both_tracks'
+          });
+        }
+        
+        // Say a greeting since this is an answered API-initiated call
+        response.say({ voice: 'Polly.Matthew' }, 'Connected.');
+      }
 
       res.type('text/xml');
-      res.send(twiml);
+      res.send(response.toString());
     } catch (error) {
       console.error("Error handling outbound call:", error);
-      res.status(500).send("Error");
+      const VoiceResponse = require('twilio').twiml.VoiceResponse;
+      const response = new VoiceResponse();
+      response.say({ voice: 'Polly.Matthew' }, 'Sorry, there was an error connecting your call.');
+      res.type('text/xml');
+      res.send(response.toString());
     }
+  });
+  
+  // Also handle GET requests for TwiML app
+  app.get("/api/twilio/voice/outbound", async (req, res) => {
+    res.status(200).send("TwiML App endpoint - use POST");
   });
 
   // Twilio call status webhook

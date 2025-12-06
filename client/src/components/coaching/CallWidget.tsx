@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Phone, PhoneOff, PhoneIncoming, Minimize2, Maximize2, X, Mic, Sparkles, CheckCircle2, Circle, ChevronDown, ChevronUp, Headphones, Delete } from "lucide-react";
+import { Phone, PhoneOff, PhoneIncoming, Minimize2, Maximize2, X, Mic, Sparkles, CheckCircle2, Circle, ChevronDown, ChevronUp, Headphones, Delete, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -10,12 +10,20 @@ import { cn } from "@/lib/utils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { VoiceCall, CallTranscript, CallChecklistStatus, CallCoachingPrompt, SalesChecklistItem } from "@shared/schema";
+import { Device, Call } from "@twilio/voice-sdk";
 
 interface CallData {
   call: VoiceCall;
   transcripts: CallTranscript[];
   checklistStatus: CallChecklistStatus[];
   coachingPrompts: CallCoachingPrompt[];
+}
+
+interface VoiceTokenResponse {
+  configured: boolean;
+  token?: string;
+  identity?: string;
+  message?: string;
 }
 
 const DIALPAD_KEYS = [
@@ -25,6 +33,22 @@ const DIALPAD_KEYS = [
   ["*", "0", "#"],
 ];
 
+// Format phone number to E.164 for Twilio
+function formatPhoneNumberE164(phoneNumber: string): string {
+  let cleaned = phoneNumber.replace(/[^\d+]/g, '');
+  if (cleaned.startsWith('+')) return cleaned;
+  if (cleaned.startsWith('0')) {
+    cleaned = '+61' + cleaned.substring(1);
+  } else if (cleaned.startsWith('61')) {
+    cleaned = '+' + cleaned;
+  } else if (cleaned.length === 9) {
+    cleaned = '+61' + cleaned;
+  } else {
+    cleaned = '+' + cleaned;
+  }
+  return cleaned;
+}
+
 export function CallWidget() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isMinimized, setIsMinimized] = useState(true);
@@ -32,7 +56,11 @@ export function CallWidget() {
   const [showChecklist, setShowChecklist] = useState(true);
   const [showDialpad, setShowDialpad] = useState(true);
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [voiceSdkConfigured, setVoiceSdkConfigured] = useState<boolean | null>(null);
+  const [sdkStatus, setSdkStatus] = useState<string>("initializing");
+  const [activeConnection, setActiveConnection] = useState<Call | null>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const deviceRef = useRef<Device | null>(null);
   const { toast } = useToast();
 
   const { data: activeCalls = [] } = useQuery<VoiceCall[]>({
@@ -59,20 +87,91 @@ export function CallWidget() {
     },
   });
 
-  const makeCallMutation = useMutation({
-    mutationFn: async (toNumber: string) => {
-      const response = await apiRequest("POST", "/api/voice/call", { phoneNumber: toNumber });
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/voice-calls/active"] });
-      setPhoneNumber("");
-      toast({ title: "Call initiated", description: "Connecting your call..." });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Call failed", description: error.message, variant: "destructive" });
-    },
-  });
+  // Initialize Twilio Voice SDK
+  const initializeVoiceSdk = useCallback(async () => {
+    try {
+      setSdkStatus("fetching token...");
+      const response = await fetch("/api/voice/token", { credentials: "include" });
+      const data: VoiceTokenResponse = await response.json();
+      
+      if (!data.configured) {
+        setVoiceSdkConfigured(false);
+        setSdkStatus("not configured");
+        console.log("Voice SDK not configured:", data.message);
+        return;
+      }
+      
+      if (!data.token) {
+        setSdkStatus("no token");
+        return;
+      }
+      
+      setVoiceSdkConfigured(true);
+      setSdkStatus("initializing device...");
+      
+      // Create and register the Device
+      const device = new Device(data.token, {
+        logLevel: 1,
+        codecPreferences: [Call.Codec.Opus, Call.Codec.PCMU],
+      });
+      
+      device.on("registered", () => {
+        setSdkStatus("ready");
+        console.log("Twilio Device registered and ready");
+      });
+      
+      device.on("error", (error) => {
+        console.error("Twilio Device error:", error);
+        setSdkStatus("error");
+        toast({ title: "Voice SDK error", description: error.message, variant: "destructive" });
+      });
+      
+      device.on("incoming", (call) => {
+        console.log("Incoming call from:", call.parameters.From);
+        setActiveConnection(call);
+        setIsMinimized(false);
+        
+        call.on("accept", () => {
+          console.log("Call accepted");
+          queryClient.invalidateQueries({ queryKey: ["/api/voice-calls/active"] });
+        });
+        
+        call.on("disconnect", () => {
+          console.log("Call disconnected");
+          setActiveConnection(null);
+          queryClient.invalidateQueries({ queryKey: ["/api/voice-calls/active"] });
+        });
+      });
+      
+      device.on("tokenWillExpire", async () => {
+        console.log("Token will expire, refreshing...");
+        const refreshResponse = await fetch("/api/voice/token", { credentials: "include" });
+        const refreshData: VoiceTokenResponse = await refreshResponse.json();
+        if (refreshData.token) {
+          device.updateToken(refreshData.token);
+        }
+      });
+      
+      await device.register();
+      deviceRef.current = device;
+      
+    } catch (error) {
+      console.error("Failed to initialize Voice SDK:", error);
+      setSdkStatus("error");
+      setVoiceSdkConfigured(false);
+    }
+  }, [toast]);
+  
+  useEffect(() => {
+    initializeVoiceSdk();
+    
+    return () => {
+      if (deviceRef.current) {
+        deviceRef.current.destroy();
+        deviceRef.current = null;
+      }
+    };
+  }, [initializeVoiceSdk]);
 
   const hangupMutation = useMutation({
     mutationFn: async (callId: string) => {
@@ -95,15 +194,66 @@ export function CallWidget() {
     setPhoneNumber((prev) => prev.slice(0, -1));
   };
 
-  const handleMakeCall = () => {
-    if (phoneNumber.length >= 8) {
-      makeCallMutation.mutate(phoneNumber);
-    } else {
+  const handleMakeCall = async () => {
+    if (phoneNumber.length < 8) {
       toast({ title: "Invalid number", description: "Please enter a valid phone number", variant: "destructive" });
+      return;
+    }
+    
+    const formattedNumber = formatPhoneNumberE164(phoneNumber);
+    
+    // Use Voice SDK if available
+    if (deviceRef.current && voiceSdkConfigured) {
+      try {
+        const call = await deviceRef.current.connect({
+          params: {
+            To: formattedNumber,
+          },
+        });
+        
+        setActiveConnection(call);
+        setPhoneNumber("");
+        toast({ title: "Calling...", description: `Dialing ${formattedNumber}` });
+        
+        call.on("accept", () => {
+          console.log("Outbound call connected");
+          queryClient.invalidateQueries({ queryKey: ["/api/voice-calls/active"] });
+        });
+        
+        call.on("disconnect", () => {
+          console.log("Outbound call ended");
+          setActiveConnection(null);
+          queryClient.invalidateQueries({ queryKey: ["/api/voice-calls/active"] });
+        });
+        
+        call.on("error", (error) => {
+          console.error("Call error:", error);
+          toast({ title: "Call error", description: error.message, variant: "destructive" });
+          setActiveConnection(null);
+        });
+        
+      } catch (error: any) {
+        console.error("Failed to make call:", error);
+        toast({ title: "Call failed", description: error.message, variant: "destructive" });
+      }
+    } else {
+      // Fallback to API call (won't work for browser audio but logs the call)
+      toast({ 
+        title: "Voice SDK not ready", 
+        description: "Browser calling requires additional Twilio configuration", 
+        variant: "destructive" 
+      });
     }
   };
 
   const handleHangup = () => {
+    // Hangup via Voice SDK if we have an active connection
+    if (activeConnection) {
+      activeConnection.disconnect();
+      setActiveConnection(null);
+    }
+    
+    // Also call the API to ensure the call is ended server-side
     if (activeCallId) {
       hangupMutation.mutate(activeCallId);
     }
@@ -386,12 +536,18 @@ export function CallWidget() {
               <Button
                 className="w-full bg-green-600 hover:bg-green-700"
                 onClick={handleMakeCall}
-                disabled={phoneNumber.length < 8 || makeCallMutation.isPending}
+                disabled={phoneNumber.length < 8 || !!activeConnection}
                 data-testid="button-make-call"
               >
                 <Phone className="h-4 w-4 mr-2" />
-                {makeCallMutation.isPending ? "Calling..." : "Call"}
+                {activeConnection ? "Calling..." : voiceSdkConfigured === false ? "SDK Not Configured" : "Call"}
               </Button>
+              {voiceSdkConfigured === false && (
+                <p className="text-xs text-muted-foreground text-center mt-1 flex items-center justify-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  Browser calling needs Twilio API Key setup
+                </p>
+              )}
             </div>
           )}
 

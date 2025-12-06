@@ -321,3 +321,67 @@ export async function getCallRecording(callSid: string): Promise<{
     return null;
   }
 }
+
+// ============================================
+// VOICE SDK TOKEN GENERATION
+// ============================================
+
+export async function generateVoiceToken(identity: string): Promise<string | null> {
+  const credentials = await getCredentials();
+  
+  if (!credentials) {
+    console.error('No Twilio credentials available for token generation');
+    return null;
+  }
+  
+  const { accountSid } = credentials;
+  
+  // For Voice SDK, we need API Key credentials
+  // Check environment variables for API Key and TwiML App SID
+  const apiKey = process.env.TWILIO_API_KEY;
+  const apiSecret = process.env.TWILIO_API_SECRET;
+  const twimlAppSid = process.env.TWILIO_TWIML_APP_SID;
+  
+  if (!apiKey || !apiSecret) {
+    console.error('TWILIO_API_KEY and TWILIO_API_SECRET required for Voice SDK');
+    return null;
+  }
+  
+  if (!twimlAppSid) {
+    console.error('TWILIO_TWIML_APP_SID required for Voice SDK');
+    return null;
+  }
+  
+  try {
+    const AccessToken = twilio.jwt.AccessToken;
+    const VoiceGrant = AccessToken.VoiceGrant;
+    
+    const voiceGrant = new VoiceGrant({
+      outgoingApplicationSid: twimlAppSid,
+      incomingAllow: true,
+    });
+    
+    const token = new AccessToken(
+      accountSid,
+      apiKey,
+      apiSecret,
+      { identity }
+    );
+    
+    token.addGrant(voiceGrant);
+    
+    return token.toJwt();
+  } catch (error) {
+    console.error('Failed to generate voice token:', error);
+    return null;
+  }
+}
+
+// Check if Voice SDK is configured
+export async function isVoiceSdkConfigured(): Promise<boolean> {
+  const apiKey = process.env.TWILIO_API_KEY;
+  const apiSecret = process.env.TWILIO_API_SECRET;
+  const twimlAppSid = process.env.TWILIO_TWIML_APP_SID;
+  
+  return !!(apiKey && apiSecret && twimlAppSid);
+}
