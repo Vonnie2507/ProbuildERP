@@ -233,6 +233,7 @@ export function LeadDetailDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads", lead?.id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-dashboard"] });
       setNewTaskTitle("");
       setNewTaskPriority("medium");
@@ -251,6 +252,7 @@ export function LeadDetailDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads", lead?.id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-tasks"] });
     },
     onError: (error) => {
       console.error("Error updating task:", error);
@@ -289,6 +291,7 @@ export function LeadDetailDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/leads", lead?.id, "tasks"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/lead-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-dashboard"] });
       if (linkingTaskToCallId) {
         queryClient.invalidateQueries({ queryKey: ["/api/lead-activities", linkingTaskToCallId, "tasks"] });
