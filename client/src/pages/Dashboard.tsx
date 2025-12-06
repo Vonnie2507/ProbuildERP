@@ -9,7 +9,7 @@ import { AlertsPanel } from "@/components/dashboard/AlertsPanel";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Users, FileText, Briefcase, DollarSign, Plus, RefreshCw } from "lucide-react";
-import type { Lead, Quote, Job, ScheduleEvent, ProductionTask, Product, Payment } from "@shared/schema";
+import type { Lead, Quote, Job, ScheduleEvent, ProductionTask, Product, Payment, KanbanColumn, JobStatus } from "@shared/schema";
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
@@ -51,6 +51,14 @@ export default function Dashboard() {
 
   const { data: pendingPayments = [] } = useQuery<Payment[]>({
     queryKey: ["/api/payments?pending=true"],
+  });
+
+  const { data: kanbanColumns = [] } = useQuery<KanbanColumn[]>({
+    queryKey: ["/api/kanban-columns"],
+  });
+
+  const { data: jobStatuses = [] } = useQuery<JobStatus[]>({
+    queryKey: ["/api/job-statuses"],
   });
 
   const handleRefresh = () => {
@@ -104,28 +112,22 @@ export default function Dashboard() {
       type: event.eventType as "install" | "delivery" | "measure" | "pickup",
     }));
 
-  const productionStages = [
-    { 
-      stage: "cutting" as const, 
-      jobCount: productionTasks.filter(t => t.taskType === "cutting" && t.status !== "completed").length,
-      progress: calculateProgress(productionTasks, "cutting"),
-    },
-    { 
-      stage: "routing" as const, 
-      jobCount: productionTasks.filter(t => t.taskType === "routing" && t.status !== "completed").length,
-      progress: calculateProgress(productionTasks, "routing"),
-    },
-    { 
-      stage: "assembly" as const, 
-      jobCount: productionTasks.filter(t => t.taskType === "assembly" && t.status !== "completed").length,
-      progress: calculateProgress(productionTasks, "assembly"),
-    },
-    { 
-      stage: "qa" as const, 
-      jobCount: productionTasks.filter(t => t.taskType === "qa" && t.status !== "completed").length,
-      progress: calculateProgress(productionTasks, "qa"),
-    },
-  ];
+  const productionColumn = kanbanColumns.find(c => c.title.toLowerCase().includes("production"));
+  const productionStatusKeys = productionColumn?.statuses || [];
+  
+  const productionStages = productionStatusKeys.map((statusKey) => {
+    const statusInfo = jobStatuses.find(s => s.key === statusKey);
+    const jobsInStatus = jobs.filter(j => j.status === statusKey);
+    const totalProductionJobs = jobs.filter(j => productionStatusKeys.includes(j.status || "")).length;
+    const progress = totalProductionJobs > 0 ? Math.round((jobsInStatus.length / totalProductionJobs) * 100) : 0;
+    
+    return {
+      statusKey,
+      label: statusInfo?.label || statusKey,
+      jobCount: jobsInStatus.length,
+      progress,
+    };
+  });
 
   const [alerts, setAlerts] = useState<Array<{
     id: string;
@@ -262,7 +264,7 @@ export default function Dashboard() {
         <div className="space-y-6">
           <ProductionOverview
             stages={productionStages}
-            totalActiveJobs={productionTasks.filter(t => t.status !== "completed").length}
+            totalActiveJobs={jobs.filter(j => productionStatusKeys.includes(j.status || "")).length}
             onViewProduction={() => setLocation("/production")}
           />
           <AlertsPanel 
