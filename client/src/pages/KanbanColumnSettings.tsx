@@ -1,15 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus,
   Pencil,
@@ -19,8 +20,10 @@ import {
   ArrowUp,
   ArrowDown,
   ListTodo,
+  Link2,
+  AlertCircle,
 } from "lucide-react";
-import type { KanbanColumn, JobStatus } from "@shared/schema";
+import type { KanbanColumn, JobStatus, JobStatusDependency } from "@shared/schema";
 
 const COLOR_OPTIONS = [
   { value: "bg-slate-100 dark:bg-slate-800", label: "Gray" },
@@ -34,6 +37,11 @@ const COLOR_OPTIONS = [
   { value: "bg-cyan-50 dark:bg-cyan-950", label: "Cyan" },
   { value: "bg-pink-50 dark:bg-pink-950", label: "Pink" },
 ];
+
+interface DependencyConfig {
+  prerequisiteKey: string;
+  dependencyType: string;
+}
 
 export default function KanbanColumnSettings() {
   const { toast } = useToast();
@@ -59,14 +67,19 @@ export default function KanbanColumnSettings() {
     description: "",
     isActive: true,
   });
+  const [statusDependencies, setStatusDependencies] = useState<DependencyConfig[]>([]);
 
-  // Fetch columns and statuses
+  // Fetch columns, statuses, and all dependencies
   const { data: columns = [], isLoading: columnsLoading } = useQuery<KanbanColumn[]>({
     queryKey: ["/api/kanban-columns"],
   });
 
   const { data: jobStatuses = [], isLoading: statusesLoading } = useQuery<JobStatus[]>({
     queryKey: ["/api/job-statuses"],
+  });
+
+  const { data: allDependencies = [] } = useQuery<JobStatusDependency[]>({
+    queryKey: ["/api/job-status-dependencies"],
   });
 
   // Column mutations
@@ -177,6 +190,18 @@ export default function KanbanColumnSettings() {
     },
   });
 
+  const saveDependenciesMutation = useMutation({
+    mutationFn: async ({ statusKey, dependencies }: { statusKey: string; dependencies: DependencyConfig[] }) => {
+      return apiRequest("PUT", `/api/job-status-dependencies/${statusKey}`, { dependencies });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/job-status-dependencies"] });
+    },
+    onError: () => {
+      toast({ title: "Failed to save dependencies", variant: "destructive" });
+    },
+  });
+
   // Column dialog handlers
   const openCreateColumnDialog = () => {
     setEditingColumn(null);
@@ -255,6 +280,7 @@ export default function KanbanColumnSettings() {
       description: "",
       isActive: true,
     });
+    setStatusDependencies([]);
     setIsStatusDialogOpen(true);
   };
 
@@ -266,24 +292,39 @@ export default function KanbanColumnSettings() {
       description: status.description || "",
       isActive: status.isActive,
     });
+    const deps = allDependencies
+      .filter(d => d.statusKey === status.key)
+      .map(d => ({ prerequisiteKey: d.prerequisiteKey, dependencyType: d.dependencyType }));
+    setStatusDependencies(deps);
     setIsStatusDialogOpen(true);
   };
 
   const closeStatusDialog = () => {
     setIsStatusDialogOpen(false);
     setEditingStatus(null);
+    setStatusDependencies([]);
   };
 
-  const handleStatusSubmit = () => {
+  const handleStatusSubmit = async () => {
     if (!statusFormData.key || !statusFormData.label) {
       toast({ title: "Please fill in key and label", variant: "destructive" });
       return;
     }
 
     if (editingStatus) {
-      updateStatusMutation.mutate({ id: editingStatus.id, data: statusFormData });
+      await updateStatusMutation.mutateAsync({ id: editingStatus.id, data: statusFormData });
+      await saveDependenciesMutation.mutateAsync({ 
+        statusKey: statusFormData.key, 
+        dependencies: statusDependencies 
+      });
     } else {
-      createStatusMutation.mutate(statusFormData);
+      await createStatusMutation.mutateAsync(statusFormData);
+      if (statusDependencies.length > 0) {
+        await saveDependenciesMutation.mutateAsync({ 
+          statusKey: statusFormData.key, 
+          dependencies: statusDependencies 
+        });
+      }
     }
   };
 
@@ -297,6 +338,32 @@ export default function KanbanColumnSettings() {
     newStatuses[newIndex] = temp;
 
     reorderStatusMutation.mutate(newStatuses.map((s) => s.id));
+  };
+
+  const addDependency = () => {
+    const availableStatuses = jobStatuses.filter(
+      s => s.key !== statusFormData.key && !statusDependencies.some(d => d.prerequisiteKey === s.key)
+    );
+    if (availableStatuses.length > 0) {
+      setStatusDependencies([...statusDependencies, { 
+        prerequisiteKey: availableStatuses[0].key, 
+        dependencyType: "mandatory" 
+      }]);
+    }
+  };
+
+  const removeDependency = (index: number) => {
+    setStatusDependencies(statusDependencies.filter((_, i) => i !== index));
+  };
+
+  const updateDependency = (index: number, field: keyof DependencyConfig, value: string) => {
+    const updated = [...statusDependencies];
+    updated[index] = { ...updated[index], [field]: value };
+    setStatusDependencies(updated);
+  };
+
+  const getStatusDependencyCount = (statusKey: string) => {
+    return allDependencies.filter(d => d.statusKey === statusKey).length;
   };
 
   const isLoading = columnsLoading || statusesLoading;
@@ -437,75 +504,84 @@ export default function KanbanColumnSettings() {
           </div>
 
           <div className="space-y-3">
-            {jobStatuses.map((status, index) => (
-              <Card key={status.id} data-testid={`card-status-${status.id}`}>
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        disabled={index === 0}
-                        onClick={() => moveStatus(index, "up")}
-                        data-testid={`button-move-up-status-${status.id}`}
-                      >
-                        <ArrowUp className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        disabled={index === jobStatuses.length - 1}
-                        onClick={() => moveStatus(index, "down")}
-                        data-testid={`button-move-down-status-${status.id}`}
-                      >
-                        <ArrowDown className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <GripVertical className="h-5 w-5 text-muted-foreground" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium">{status.label}</h3>
-                        <Badge variant="outline" className="text-xs font-mono">
-                          {status.key}
-                        </Badge>
-                        {!status.isActive && (
-                          <Badge variant="secondary" className="text-xs">
-                            Inactive
+            {jobStatuses.map((status, index) => {
+              const depCount = getStatusDependencyCount(status.key);
+              return (
+                <Card key={status.id} data-testid={`card-status-${status.id}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-4">
+                      <div className="flex flex-col gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          disabled={index === 0}
+                          onClick={() => moveStatus(index, "up")}
+                          data-testid={`button-move-up-status-${status.id}`}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          disabled={index === jobStatuses.length - 1}
+                          onClick={() => moveStatus(index, "down")}
+                          data-testid={`button-move-down-status-${status.id}`}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <GripVertical className="h-5 w-5 text-muted-foreground" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="font-medium">{status.label}</h3>
+                          <Badge variant="outline" className="text-xs font-mono">
+                            {status.key}
                           </Badge>
+                          {!status.isActive && (
+                            <Badge variant="secondary" className="text-xs">
+                              Inactive
+                            </Badge>
+                          )}
+                          {depCount > 0 && (
+                            <Badge variant="outline" className="text-xs flex items-center gap-1">
+                              <Link2 className="h-3 w-3" />
+                              {depCount} prerequisite{depCount > 1 ? 's' : ''}
+                            </Badge>
+                          )}
+                        </div>
+                        {status.description && (
+                          <p className="text-sm text-muted-foreground">{status.description}</p>
                         )}
                       </div>
-                      {status.description && (
-                        <p className="text-sm text-muted-foreground">{status.description}</p>
-                      )}
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditStatusDialog(status)}
+                          data-testid={`button-edit-status-${status.id}`}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (confirm("Are you sure you want to delete this status? This may affect existing jobs.")) {
+                              deleteStatusMutation.mutate(status.id);
+                            }
+                          }}
+                          data-testid={`button-delete-status-${status.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditStatusDialog(status)}
-                        data-testid={`button-edit-status-${status.id}`}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => {
-                          if (confirm("Are you sure you want to delete this status? This may affect existing jobs.")) {
-                            deleteStatusMutation.mutate(status.id);
-                          }
-                        }}
-                        data-testid={`button-delete-status-${status.id}`}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
 
             {jobStatuses.length === 0 && (
               <Card>
@@ -527,6 +603,9 @@ export default function KanbanColumnSettings() {
             <DialogTitle>
               {editingColumn ? "Edit Column" : "Add New Column"}
             </DialogTitle>
+            <DialogDescription>
+              Configure the kanban column settings
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -630,11 +709,14 @@ export default function KanbanColumnSettings() {
 
       {/* Status Dialog */}
       <Dialog open={isStatusDialogOpen} onOpenChange={setIsStatusDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingStatus ? "Edit Status" : "Add New Status"}
             </DialogTitle>
+            <DialogDescription>
+              Configure the job status settings and prerequisites
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -683,6 +765,101 @@ export default function KanbanColumnSettings() {
               />
               <Label htmlFor="statusIsActive">Active</Label>
             </div>
+
+            {/* Dependencies Section */}
+            <div className="space-y-3 pt-4 border-t">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label className="flex items-center gap-2">
+                    <Link2 className="h-4 w-4" />
+                    Prerequisites
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Which statuses must be completed before this one?
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addDependency}
+                  disabled={
+                    jobStatuses.filter(
+                      s => s.key !== statusFormData.key && !statusDependencies.some(d => d.prerequisiteKey === s.key)
+                    ).length === 0
+                  }
+                  data-testid="button-add-dependency"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add
+                </Button>
+              </div>
+
+              {statusDependencies.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic py-2">
+                  No prerequisites. This status can be reached at any time.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {statusDependencies.map((dep, index) => (
+                    <div key={index} className="flex items-center gap-2 p-2 border rounded bg-muted/30">
+                      <Select
+                        value={dep.prerequisiteKey}
+                        onValueChange={(value) => updateDependency(index, 'prerequisiteKey', value)}
+                      >
+                        <SelectTrigger className="flex-1" data-testid={`select-prerequisite-${index}`}>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {jobStatuses
+                            .filter(s => s.key !== statusFormData.key)
+                            .map((s) => (
+                              <SelectItem 
+                                key={s.key} 
+                                value={s.key}
+                                disabled={statusDependencies.some((d, i) => i !== index && d.prerequisiteKey === s.key)}
+                              >
+                                {s.label}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      <Select
+                        value={dep.dependencyType}
+                        onValueChange={(value) => updateDependency(index, 'dependencyType', value)}
+                      >
+                        <SelectTrigger className="w-32" data-testid={`select-dep-type-${index}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mandatory">
+                            <span className="flex items-center gap-1">
+                              <AlertCircle className="h-3 w-3 text-destructive" />
+                              Required
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="advisory">Advisory</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeDependency(index)}
+                        data-testid={`button-remove-dependency-${index}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                <strong>Required:</strong> Job cannot enter this status until prerequisite is done.<br />
+                <strong>Advisory:</strong> Shows a warning but allows override.
+              </div>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeStatusDialog}>
@@ -690,7 +867,7 @@ export default function KanbanColumnSettings() {
             </Button>
             <Button
               onClick={handleStatusSubmit}
-              disabled={createStatusMutation.isPending || updateStatusMutation.isPending}
+              disabled={createStatusMutation.isPending || updateStatusMutation.isPending || saveDependenciesMutation.isPending}
               data-testid="button-save-status"
             >
               {editingStatus ? "Update" : "Create"} Status
