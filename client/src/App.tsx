@@ -43,6 +43,8 @@ import Financial from "@/pages/Financial";
 import JobStageConfiguration from "@/pages/JobStageConfiguration";
 import KanbanColumnSettings from "@/pages/KanbanColumnSettings";
 import SalesChecklistConfig from "@/pages/SalesChecklistConfig";
+import Calls from "@/pages/Calls";
+import { CallWidget } from "@/components/coaching/CallWidget";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -62,6 +64,7 @@ function MainLayout({ children }: { children: React.ReactNode }) {
           </main>
         </SidebarInset>
       </div>
+      <CallWidget />
     </SidebarProvider>
   );
 }
@@ -265,6 +268,13 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/messages">
           <MainLayout>
             <Messages />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/calls">
+        <ProtectedRoute path="/calls">
+          <MainLayout>
+            <Calls />
           </MainLayout>
         </ProtectedRoute>
       </Route>

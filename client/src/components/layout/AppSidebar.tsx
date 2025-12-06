@@ -29,6 +29,7 @@ import {
   LayoutDashboard,
   Landmark,
   Columns3,
+  Phone,
 } from "lucide-react";
 import {
   Sidebar,
@@ -84,6 +85,7 @@ const navigationConfig: NavGroup[] = [
       { title: "Banking", url: "/financial", icon: Landmark },
       { title: "Payments", url: "/payments", icon: CreditCard },
       { title: "Messages", url: "/messages", icon: MessageSquare, badge: "unread-messages" },
+      { title: "Calls", url: "/calls", icon: Phone },
     ],
   },
   {

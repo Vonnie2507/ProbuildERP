@@ -28,6 +28,7 @@ export const routePermissions: RouteConfig[] = [
   { path: "/financial", allowedRoles: ["admin", "scheduler", "production_manager"] },
   { path: "/payments", allowedRoles: ["admin"] },
   { path: "/messages", allowedRoles: allInternalRoles },
+  { path: "/calls", allowedRoles: ["admin", "sales"] },
   { path: "/quote-analytics", allowedRoles: allInternalRoles },
   { path: "/automation", allowedRoles: ["admin"] },
   { path: "/installer", allowedRoles: allInternalRoles },
