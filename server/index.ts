@@ -101,8 +101,13 @@ app.use((req, res, next) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
+    console.error("Error:", err);
     res.status(status).json({ message });
-    throw err;
+  });
+
+  // Health check endpoint (before static files)
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
   // importantly only setup vite in development and after
