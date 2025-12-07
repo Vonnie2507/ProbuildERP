@@ -773,6 +773,8 @@ export default function Financial() {
     date: "",
     description: "",
     amount: "",
+    debitAmount: "",
+    creditAmount: "",
     direction: "",
   });
   const [importErrors, setImportErrors] = useState<string[]>([]);
@@ -1003,7 +1005,7 @@ export default function Financial() {
       // Auto-detect column mapping from headers
       if (parsed.length > 0) {
         const headers = parsed[0].map(h => h.toLowerCase());
-        const newMapping: Record<string, string> = { date: "", description: "", amount: "", direction: "" };
+        const newMapping: Record<string, string> = { date: "", description: "", amount: "", debitAmount: "", creditAmount: "", direction: "" };
         headers.forEach((header, index) => {
           if (header.includes('date') || header.includes('posted') || header.includes('transaction')) {
             if (!newMapping.date) newMapping.date = index.toString();
@@ -1011,10 +1013,15 @@ export default function Financial() {
           if (header.includes('description') || header.includes('memo') || header.includes('narrative')) {
             if (!newMapping.description) newMapping.description = index.toString();
           }
-          if (header.includes('amount') || header.includes('value') || header.includes('total')) {
+          // Check for separate debit/credit amount columns first
+          if (header.includes('debit') && header.includes('amount')) {
+            if (!newMapping.debitAmount) newMapping.debitAmount = index.toString();
+          } else if (header.includes('credit') && header.includes('amount')) {
+            if (!newMapping.creditAmount) newMapping.creditAmount = index.toString();
+          } else if (header.includes('amount') || header.includes('value') || header.includes('total')) {
             if (!newMapping.amount) newMapping.amount = index.toString();
           }
-          if (header.includes('type') || header.includes('direction') || header.includes('dr/cr') || header.includes('debit') || header.includes('credit')) {
+          if (header.includes('type') || header.includes('direction') || header.includes('dr/cr')) {
             if (!newMapping.direction) newMapping.direction = index.toString();
           }
         });
@@ -1055,20 +1062,45 @@ export default function Financial() {
       });
       
       const mappedRows = allRows.map(row => {
-        const rawAmount = columnMapping.amount ? row[parseInt(columnMapping.amount)] : "0";
-        const rawDirection = columnMapping.direction ? row[parseInt(columnMapping.direction)] : "";
+        let normalizedAmount = "0";
+        let direction = "";
         
-        // Normalize amount: strip currency symbols, spaces, handle parentheses for negatives
-        let normalizedAmount = rawAmount
-          .replace(/[$€£¥A-Za-z,\s]/g, '')  // Remove currency symbols, letters, commas, spaces
-          .replace(/\(([0-9.]+)\)/, '-$1'); // Convert (123.45) to -123.45
-        
-        const numAmount = parseFloat(normalizedAmount) || 0;
-        
-        // Derive direction from amount sign if not explicitly mapped
-        let direction = rawDirection;
-        if (!direction && numAmount !== 0) {
-          direction = numAmount < 0 ? "debit" : "credit";
+        // Check if using separate debit/credit columns
+        if (columnMapping.debitAmount || columnMapping.creditAmount) {
+          const debitVal = columnMapping.debitAmount ? row[parseInt(columnMapping.debitAmount)] : "";
+          const creditVal = columnMapping.creditAmount ? row[parseInt(columnMapping.creditAmount)] : "";
+          
+          // Clean and parse both values
+          const cleanDebit = debitVal.replace(/[$€£¥A-Za-z,\s]/g, '').replace(/\(([0-9.]+)\)/, '$1');
+          const cleanCredit = creditVal.replace(/[$€£¥A-Za-z,\s]/g, '').replace(/\(([0-9.]+)\)/, '$1');
+          
+          const debitNum = parseFloat(cleanDebit) || 0;
+          const creditNum = parseFloat(cleanCredit) || 0;
+          
+          if (debitNum > 0) {
+            normalizedAmount = debitNum.toString();
+            direction = "debit";
+          } else if (creditNum > 0) {
+            normalizedAmount = creditNum.toString();
+            direction = "credit";
+          }
+        } else {
+          // Single amount column
+          const rawAmount = columnMapping.amount ? row[parseInt(columnMapping.amount)] : "0";
+          const rawDirection = columnMapping.direction ? row[parseInt(columnMapping.direction)] : "";
+          
+          // Normalize amount: strip currency symbols, spaces, handle parentheses for negatives
+          normalizedAmount = rawAmount
+            .replace(/[$€£¥A-Za-z,\s]/g, '')  // Remove currency symbols, letters, commas, spaces
+            .replace(/\(([0-9.]+)\)/, '-$1'); // Convert (123.45) to -123.45
+          
+          const numAmount = parseFloat(normalizedAmount) || 0;
+          
+          // Derive direction from amount sign if not explicitly mapped
+          direction = rawDirection;
+          if (!direction && numAmount !== 0) {
+            direction = numAmount < 0 ? "debit" : "credit";
+          }
         }
         
         return {
@@ -1620,12 +1652,16 @@ export default function Financial() {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Amount Column</Label>
-                      <Select value={columnMapping.amount} onValueChange={(v) => setColumnMapping(prev => ({ ...prev, amount: v }))}>
+                      <Label className="text-xs text-muted-foreground">Amount Column (or leave empty if using Debit/Credit)</Label>
+                      <Select 
+                        value={columnMapping.amount || "__none__"} 
+                        onValueChange={(v) => setColumnMapping(prev => ({ ...prev, amount: v === "__none__" ? "" : v }))}
+                      >
                         <SelectTrigger data-testid="select-amount-column">
                           <SelectValue placeholder="Select column" />
                         </SelectTrigger>
                         <SelectContent>
+                          <SelectItem value="__none__">None (use Debit/Credit columns)</SelectItem>
                           {importPreview[0].map((header, idx) => (
                             <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
                           ))}
@@ -1633,16 +1669,33 @@ export default function Financial() {
                       </Select>
                     </div>
                     <div>
-                      <Label className="text-xs text-muted-foreground">Type/Direction Column (optional)</Label>
+                      <Label className="text-xs text-muted-foreground">Debit Amount Column</Label>
                       <Select 
-                        value={columnMapping.direction || "__none__"} 
-                        onValueChange={(v) => setColumnMapping(prev => ({ ...prev, direction: v === "__none__" ? "" : v }))}
+                        value={columnMapping.debitAmount || "__none__"} 
+                        onValueChange={(v) => setColumnMapping(prev => ({ ...prev, debitAmount: v === "__none__" ? "" : v }))}
                       >
-                        <SelectTrigger data-testid="select-direction-column">
+                        <SelectTrigger data-testid="select-debit-column">
                           <SelectValue placeholder="Select column" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="__none__">None (use amount sign)</SelectItem>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {importPreview[0].map((header, idx) => (
+                            <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Credit Amount Column</Label>
+                      <Select 
+                        value={columnMapping.creditAmount || "__none__"} 
+                        onValueChange={(v) => setColumnMapping(prev => ({ ...prev, creditAmount: v === "__none__" ? "" : v }))}
+                      >
+                        <SelectTrigger data-testid="select-credit-column">
+                          <SelectValue placeholder="Select column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
                           {importPreview[0].map((header, idx) => (
                             <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
                           ))}
@@ -1706,7 +1759,7 @@ export default function Financial() {
                 setImportPreview([]);
                 setImportErrors([]);
                 setImportResult(null);
-                setColumnMapping({ date: "", description: "", amount: "", direction: "" });
+                setColumnMapping({ date: "", description: "", amount: "", debitAmount: "", creditAmount: "", direction: "" });
               }}
               data-testid="button-cancel-import"
             >
@@ -1714,7 +1767,7 @@ export default function Financial() {
             </Button>
             <Button
               onClick={handleImportSubmit}
-              disabled={importCsvMutation.isPending || !importFile || !columnMapping.date || !columnMapping.description || !columnMapping.amount}
+              disabled={importCsvMutation.isPending || !importFile || !columnMapping.date || !columnMapping.description || (!columnMapping.amount && !columnMapping.debitAmount && !columnMapping.creditAmount)}
               data-testid="button-submit-import"
             >
               {importCsvMutation.isPending ? (
