@@ -5806,6 +5806,157 @@ export async function registerRoutes(
     }
   });
 
+  // Import transactions from CSV
+  app.post("/api/financial/transactions/import", requireRoles("admin"), async (req, res) => {
+    try {
+      const { rows } = req.body;
+      
+      if (!rows || !Array.isArray(rows)) {
+        return res.status(400).json({ error: "Invalid CSV data. Expected rows array." });
+      }
+      
+      // Get or create a default "Manual Import" account for CSV imports
+      let importAccount = await storage.getBankAccountByName("Manual Import");
+      if (!importAccount) {
+        // First, create a placeholder connection for manual imports
+        let importConnection = await storage.getBankConnectionByInstitution("MANUAL");
+        if (!importConnection) {
+          const newConnection = await storage.createBankConnection({
+            institutionId: "MANUAL",
+            institutionName: "Manual Import",
+            status: "active",
+          });
+          if (!newConnection) {
+            return res.status(500).json({ error: "Failed to create import connection" });
+          }
+          importConnection = newConnection;
+        }
+        
+        // Create the import account
+        const newAccount = await storage.createBankAccount({
+          connectionId: importConnection.id,
+          basiqAccountId: "manual-import",
+          name: "Manual Import",
+          accountType: "other",
+          currency: "AUD",
+        });
+        if (!newAccount) {
+          return res.status(500).json({ error: "Failed to create import account" });
+        }
+        importAccount = newAccount;
+      }
+      
+      let importedCount = 0;
+      const errors: string[] = [];
+      
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        
+        try {
+          // Parse date - try multiple formats
+          let transactionDate: Date | null = null;
+          if (row.transactionDate) {
+            const dateStr = row.transactionDate.trim();
+            // Try various date formats
+            const formats = [
+              /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/, // DD/MM/YYYY or D/M/YYYY
+              /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/, // DD/MM/YY
+              /^(\d{4})-(\d{2})-(\d{2})$/, // YYYY-MM-DD
+            ];
+            
+            for (const format of formats) {
+              const match = dateStr.match(format);
+              if (match) {
+                if (format === formats[2]) {
+                  // YYYY-MM-DD
+                  transactionDate = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+                } else if (format === formats[1]) {
+                  // DD/MM/YY
+                  const year = parseInt(match[3]) + 2000;
+                  transactionDate = new Date(year, parseInt(match[2]) - 1, parseInt(match[1]));
+                } else {
+                  // DD/MM/YYYY
+                  transactionDate = new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]));
+                }
+                break;
+              }
+            }
+            
+            // Fallback: try Date.parse
+            if (!transactionDate) {
+              const parsed = Date.parse(dateStr);
+              if (!isNaN(parsed)) {
+                transactionDate = new Date(parsed);
+              }
+            }
+          }
+          
+          if (!transactionDate || isNaN(transactionDate.getTime())) {
+            errors.push(`Row ${i + 1}: Invalid date "${row.transactionDate}"`);
+            continue;
+          }
+          
+          // Parse amount - remove currency symbols, handle negatives
+          let amount = row.amount?.toString().replace(/[^0-9.\-]/g, '') || "0";
+          const numAmount = parseFloat(amount);
+          
+          if (isNaN(numAmount)) {
+            errors.push(`Row ${i + 1}: Invalid amount "${row.amount}"`);
+            continue;
+          }
+          
+          // Determine direction from amount or explicit direction field
+          let direction: "credit" | "debit" = numAmount >= 0 ? "credit" : "debit";
+          if (row.direction) {
+            const dirLower = row.direction.toLowerCase().trim();
+            if (dirLower.includes("debit") || dirLower === "dr" || dirLower === "d") {
+              direction = "debit";
+            } else if (dirLower.includes("credit") || dirLower === "cr" || dirLower === "c") {
+              direction = "credit";
+            }
+          }
+          
+          // Create unique transaction ID based on date, amount, description
+          const description = row.description?.trim() || "Imported transaction";
+          const uniqueId = `csv-${transactionDate.toISOString().split('T')[0]}-${Math.abs(numAmount).toFixed(2)}-${description.slice(0, 20).replace(/\s+/g, '-')}`;
+          
+          await storage.createBankTransaction({
+            accountId: importAccount.id,
+            basiqTransactionId: `import-${Date.now()}-${i}`,
+            description,
+            amount: Math.abs(numAmount).toFixed(2),
+            direction,
+            status: "posted",
+            transactionDate,
+            postDate: transactionDate,
+            category: null,
+            subCategory: null,
+            merchantName: null,
+            merchantLocation: null,
+            runningBalance: null,
+            rawData: { source: "csv_import", originalRow: row },
+          });
+          
+          importedCount++;
+        } catch (rowError: any) {
+          errors.push(`Row ${i + 1}: ${rowError.message}`);
+        }
+      }
+      
+      res.json({
+        success: true,
+        count: importedCount,
+        errors: errors.length > 0 ? errors.slice(0, 10) : undefined,
+        message: errors.length > 0 
+          ? `Imported ${importedCount} transactions with ${errors.length} errors`
+          : `Successfully imported ${importedCount} transactions`
+      });
+    } catch (error) {
+      console.error("Error importing CSV transactions:", error);
+      res.status(500).json({ error: "Failed to import transactions" });
+    }
+  });
+
   // ============================================
   // EXPENSE CATEGORIES
   // ============================================

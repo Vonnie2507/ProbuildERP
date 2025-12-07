@@ -30,6 +30,8 @@ import {
   UserCircle,
   Calendar,
   Tag,
+  Upload,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -345,7 +347,7 @@ function StaffExpensesTab() {
 
   const autoAllocateMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("/api/financial/auto-allocate", { method: "POST" });
+      return apiRequest("POST", "/api/financial/auto-allocate");
     },
     onSuccess: (data: any) => {
       toast({
@@ -533,10 +535,7 @@ function ReceiptInboxTab() {
 
   const createLinkMutation = useMutation({
     mutationFn: async (data: { description: string; amount?: string }) => {
-      return apiRequest("/api/receipts/create-link", {
-        method: "POST",
-        body: JSON.stringify(data),
-      });
+      return apiRequest("POST", "/api/receipts/create-link", data);
     },
     onSuccess: (data: any) => {
       toast({
@@ -765,6 +764,19 @@ export default function Financial() {
   const [email, setEmail] = useState("");
   const [, setLocation] = useLocation();
   const isAdmin = user?.role === "admin";
+  
+  // CSV Import state
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<string[][]>([]);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({
+    date: "",
+    description: "",
+    amount: "",
+    direction: "",
+  });
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const [importResult, setImportResult] = useState<{ count: number; errors: string[] } | null>(null);
 
   // Check URL for success/error from Basiq callback
   useEffect(() => {
@@ -897,6 +909,183 @@ export default function Financial() {
       });
     },
   });
+
+  // CSV Import mutation
+  const importCsvMutation = useMutation({
+    mutationFn: async (data: { rows: Record<string, string>[] }) => {
+      const res = await apiRequest("POST", "/api/financial/transactions/import", data);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/financial/overview"] });
+      
+      const hasErrors = data.errors && data.errors.length > 0;
+      const importCount = data.count || 0;
+      
+      // Store errors for display in dialog
+      if (hasErrors) {
+        setImportErrors(data.errors);
+      }
+      
+      // If there are ANY errors, keep dialog open so user can see what went wrong
+      if (hasErrors) {
+        if (importCount === 0) {
+          toast({
+            title: "Import Failed",
+            description: "No transactions were imported. Check the errors below and adjust your column mapping.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Partial Import",
+            description: `Imported ${importCount} transactions. ${data.errors.length} row(s) had issues - see details below.`,
+          });
+        }
+        // Keep dialog open - don't reset state
+        return;
+      }
+      
+      // Full success - all rows imported without errors
+      toast({
+        title: "Import Complete",
+        description: `Successfully imported ${importCount} transactions.`,
+      });
+      
+      // Close dialog and reset on full success only
+      setShowImportDialog(false);
+      setImportFile(null);
+      setImportPreview([]);
+      setImportErrors([]);
+      setColumnMapping({ date: "", description: "", amount: "", direction: "" });
+    },
+    onError: (error: any) => {
+      // Keep dialog open and show error
+      setImportErrors([error.message || "Failed to import transactions. Please try again."]);
+      toast({
+        title: "Import Failed",
+        description: error.message || "Failed to import transactions.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handle CSV file selection and preview
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setImportFile(file);
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n').filter(line => line.trim());
+      const parsed = lines.slice(0, 6).map(line => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (const char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim());
+        return result;
+      });
+      setImportPreview(parsed);
+      
+      // Auto-detect column mapping from headers
+      if (parsed.length > 0) {
+        const headers = parsed[0].map(h => h.toLowerCase());
+        const newMapping: Record<string, string> = { date: "", description: "", amount: "", direction: "" };
+        headers.forEach((header, index) => {
+          if (header.includes('date') || header.includes('posted') || header.includes('transaction')) {
+            if (!newMapping.date) newMapping.date = index.toString();
+          }
+          if (header.includes('description') || header.includes('memo') || header.includes('narrative')) {
+            if (!newMapping.description) newMapping.description = index.toString();
+          }
+          if (header.includes('amount') || header.includes('value') || header.includes('total')) {
+            if (!newMapping.amount) newMapping.amount = index.toString();
+          }
+          if (header.includes('type') || header.includes('direction') || header.includes('dr/cr') || header.includes('debit') || header.includes('credit')) {
+            if (!newMapping.direction) newMapping.direction = index.toString();
+          }
+        });
+        setColumnMapping(newMapping);
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Process and submit CSV import
+  const handleImportSubmit = () => {
+    if (!importFile || importPreview.length < 2) return;
+    
+    const headers = importPreview[0];
+    const dataRows = importPreview.slice(1);
+    
+    // Parse full file for import
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n').filter(line => line.trim());
+      const allRows = lines.slice(1).map(line => {
+        const result: string[] = [];
+        let current = '';
+        let inQuotes = false;
+        for (const char of line) {
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === ',' && !inQuotes) {
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+        result.push(current.trim());
+        return result;
+      });
+      
+      const mappedRows = allRows.map(row => {
+        const rawAmount = columnMapping.amount ? row[parseInt(columnMapping.amount)] : "0";
+        const rawDirection = columnMapping.direction ? row[parseInt(columnMapping.direction)] : "";
+        
+        // Normalize amount: strip currency symbols, spaces, handle parentheses for negatives
+        let normalizedAmount = rawAmount
+          .replace(/[$€£¥A-Za-z,\s]/g, '')  // Remove currency symbols, letters, commas, spaces
+          .replace(/\(([0-9.]+)\)/, '-$1'); // Convert (123.45) to -123.45
+        
+        const numAmount = parseFloat(normalizedAmount) || 0;
+        
+        // Derive direction from amount sign if not explicitly mapped
+        let direction = rawDirection;
+        if (!direction && numAmount !== 0) {
+          direction = numAmount < 0 ? "debit" : "credit";
+        }
+        
+        return {
+          transactionDate: columnMapping.date ? row[parseInt(columnMapping.date)] : "",
+          description: columnMapping.description ? row[parseInt(columnMapping.description)] : "",
+          amount: normalizedAmount,
+          direction,
+        };
+      });
+      
+      // Clear any previous errors before submitting
+      setImportErrors([]);
+      
+      importCsvMutation.mutate({ rows: mappedRows });
+    };
+    reader.readAsText(importFile);
+  };
 
   return (
     <div className="flex-1 p-6 space-y-6">
@@ -1109,6 +1298,16 @@ export default function Financial() {
                       <SelectItem value="debit">Debits Only</SelectItem>
                     </SelectContent>
                   </Select>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowImportDialog(true)}
+                      data-testid="button-import-csv"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Import CSV
+                    </Button>
+                  )}
                 </div>
               </div>
             </CardHeader>
@@ -1356,6 +1555,174 @@ export default function Financial() {
                 <>
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Connect to Bank
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* CSV Import Dialog */}
+      <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5" />
+              Import Transactions from CSV
+            </DialogTitle>
+            <DialogDescription>
+              Upload a CSV file from your bank export. Map the columns to import transactions.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="csv-file" className="text-sm font-medium">CSV File</Label>
+              <Input
+                id="csv-file"
+                type="file"
+                accept=".csv"
+                onChange={handleFileSelect}
+                className="mt-1"
+                data-testid="input-csv-file"
+              />
+            </div>
+
+            {importPreview.length > 0 && (
+              <>
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Column Mapping</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Date Column</Label>
+                      <Select value={columnMapping.date} onValueChange={(v) => setColumnMapping(prev => ({ ...prev, date: v }))}>
+                        <SelectTrigger data-testid="select-date-column">
+                          <SelectValue placeholder="Select column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {importPreview[0].map((header, idx) => (
+                            <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Description Column</Label>
+                      <Select value={columnMapping.description} onValueChange={(v) => setColumnMapping(prev => ({ ...prev, description: v }))}>
+                        <SelectTrigger data-testid="select-description-column">
+                          <SelectValue placeholder="Select column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {importPreview[0].map((header, idx) => (
+                            <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Amount Column</Label>
+                      <Select value={columnMapping.amount} onValueChange={(v) => setColumnMapping(prev => ({ ...prev, amount: v }))}>
+                        <SelectTrigger data-testid="select-amount-column">
+                          <SelectValue placeholder="Select column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {importPreview[0].map((header, idx) => (
+                            <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Type/Direction Column (optional)</Label>
+                      <Select value={columnMapping.direction} onValueChange={(v) => setColumnMapping(prev => ({ ...prev, direction: v }))}>
+                        <SelectTrigger data-testid="select-direction-column">
+                          <SelectValue placeholder="Select column" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">None (use amount sign)</SelectItem>
+                          {importPreview[0].map((header, idx) => (
+                            <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <Label className="text-sm font-medium">Preview (first 5 rows)</Label>
+                  <div className="mt-2 border rounded-lg overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          {importPreview[0].map((header, idx) => (
+                            <TableHead key={idx} className="whitespace-nowrap text-xs">{header}</TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {importPreview.slice(1, 5).map((row, rowIdx) => (
+                          <TableRow key={rowIdx}>
+                            {row.map((cell, cellIdx) => (
+                              <TableCell key={cellIdx} className="text-xs whitespace-nowrap">{cell}</TableCell>
+                            ))}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Error Display */}
+            {importErrors.length > 0 && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Import Errors</AlertTitle>
+                <AlertDescription>
+                  <ul className="list-disc list-inside text-xs mt-1 space-y-1 max-h-32 overflow-y-auto">
+                    {importErrors.slice(0, 10).map((error, idx) => (
+                      <li key={idx}>{error}</li>
+                    ))}
+                    {importErrors.length > 10 && (
+                      <li className="text-muted-foreground">...and {importErrors.length - 10} more errors</li>
+                    )}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowImportDialog(false);
+                setImportFile(null);
+                setImportPreview([]);
+                setImportErrors([]);
+                setImportResult(null);
+                setColumnMapping({ date: "", description: "", amount: "", direction: "" });
+              }}
+              data-testid="button-cancel-import"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleImportSubmit}
+              disabled={importCsvMutation.isPending || !importFile || !columnMapping.date || !columnMapping.description || !columnMapping.amount}
+              data-testid="button-submit-import"
+            >
+              {importCsvMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Importing...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Import Transactions
                 </>
               )}
             </Button>

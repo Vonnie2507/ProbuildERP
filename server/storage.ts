@@ -529,6 +529,7 @@ export interface IStorage {
   // Bank Connections
   getBankConnections(): Promise<BankConnection[]>;
   getBankConnectionById(id: string): Promise<BankConnection | undefined>;
+  getBankConnectionByInstitution(institutionId: string): Promise<BankConnection | undefined>;
   createBankConnection(connection: InsertBankConnection): Promise<BankConnection>;
   updateBankConnection(id: string, connection: Partial<InsertBankConnection>): Promise<BankConnection | undefined>;
   deleteBankConnection(id: string): Promise<boolean>;
@@ -537,6 +538,7 @@ export interface IStorage {
   getBankAccounts(): Promise<BankAccount[]>;
   getBankAccountsByConnection(connectionId: string): Promise<BankAccount[]>;
   getBankAccountById(id: string): Promise<BankAccount | undefined>;
+  getBankAccountByName(name: string): Promise<BankAccount | undefined>;
   createBankAccount(account: InsertBankAccount): Promise<BankAccount>;
   updateBankAccount(id: string, account: Partial<InsertBankAccount>): Promise<BankAccount | undefined>;
   deleteBankAccount(id: string): Promise<boolean>;
@@ -3367,6 +3369,11 @@ export class DatabaseStorage implements IStorage {
     return connection;
   }
 
+  async getBankConnectionByInstitution(institutionId: string): Promise<BankConnection | undefined> {
+    const [connection] = await db.select().from(bankConnections).where(eq(bankConnections.institutionId, institutionId));
+    return connection;
+  }
+
   async createBankConnection(connection: InsertBankConnection): Promise<BankConnection> {
     const [created] = await db.insert(bankConnections).values(connection).returning();
     return created;
@@ -3398,6 +3405,11 @@ export class DatabaseStorage implements IStorage {
 
   async getBankAccountById(id: string): Promise<BankAccount | undefined> {
     const [account] = await db.select().from(bankAccounts).where(eq(bankAccounts.id, id));
+    return account;
+  }
+
+  async getBankAccountByName(name: string): Promise<BankAccount | undefined> {
+    const [account] = await db.select().from(bankAccounts).where(eq(bankAccounts.name, name));
     return account;
   }
 
