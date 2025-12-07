@@ -2,9 +2,13 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import type { SalesChecklistItem, CallTranscript, CallChecklistStatus } from "@shared/schema";
 
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-});
+// Make OpenAI optional - app can work without AI coaching features
+const openaiApiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
+
+if (!openai) {
+  console.log("OpenAI API key not configured - AI coaching features will be disabled");
+}
 
 interface AnalysisResult {
   coveredItems: Array<{
@@ -40,6 +44,11 @@ export async function analyzeTranscriptForChecklist(
   });
 
   if (uncoveredItems.length === 0) {
+    return { coveredItems: [], suggestedPrompts: [] };
+  }
+
+  // Skip AI analysis if OpenAI is not configured
+  if (!openai) {
     return { coveredItems: [], suggestedPrompts: [] };
   }
 
@@ -159,6 +168,11 @@ export async function generateSuggestedResponse(
   callId: string,
   customerQuestion: string
 ): Promise<string | null> {
+  // Skip if OpenAI is not configured
+  if (!openai) {
+    return null;
+  }
+
   try {
     const [transcripts, checklistItems] = await Promise.all([
       storage.getCallTranscripts(callId),
