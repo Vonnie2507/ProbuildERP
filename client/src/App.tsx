@@ -45,6 +45,7 @@ import KanbanColumnSettings from "@/pages/KanbanColumnSettings";
 import SalesChecklistConfig from "@/pages/SalesChecklistConfig";
 import Calls from "@/pages/Calls";
 import SubmitReceipt from "@/pages/SubmitReceipt";
+import ExpenseCategoryConfig from "@/pages/ExpenseCategoryConfig";
 import { CallWidget } from "@/components/coaching/CallWidget";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
@@ -448,6 +449,13 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/sales-checklist-config">
           <MainLayout>
             <SalesChecklistConfig />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/expense-category-config">
+        <ProtectedRoute path="/expense-category-config">
+          <MainLayout>
+            <ExpenseCategoryConfig />
           </MainLayout>
         </ProtectedRoute>
       </Route>

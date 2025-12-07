@@ -30,6 +30,7 @@ import {
   Landmark,
   Columns3,
   Phone,
+  Tag,
 } from "lucide-react";
 import {
   Sidebar,
@@ -130,6 +131,7 @@ const navigationConfig: NavGroup[] = [
       { title: "Dashboard Builder", url: "/dashboard-builder", icon: LayoutDashboard },
       { title: "Job Stage Config", url: "/job-stage-configuration", icon: GitBranch },
       { title: "Kanban Columns", url: "/kanban-column-settings", icon: Columns3 },
+      { title: "Expense Categories", url: "/expense-category-config", icon: Tag },
     ],
   },
 ];
