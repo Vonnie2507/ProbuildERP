@@ -2371,6 +2371,7 @@ export const expenseCategories = pgTable("expense_categories", {
   name: varchar("name", { length: 100 }).notNull(),
   icon: varchar("icon", { length: 50 }),
   color: varchar("color", { length: 50 }),
+  keywords: text("keywords").array(), // Keywords for auto-categorization (e.g., ["fuel", "petrol", "caltex"])
   isDefault: boolean("is_default").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
