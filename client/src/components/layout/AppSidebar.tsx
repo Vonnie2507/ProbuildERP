@@ -31,6 +31,7 @@ import {
   Columns3,
   Phone,
   Tag,
+  Receipt,
 } from "lucide-react";
 import {
   Sidebar,
@@ -84,6 +85,7 @@ const navigationConfig: NavGroup[] = [
     label: "Finance",
     items: [
       { title: "Banking", url: "/financial", icon: Landmark },
+      { title: "Staff Expenses", url: "/staff-expenses", icon: Receipt },
       { title: "Payments", url: "/payments", icon: CreditCard },
       { title: "Messages", url: "/messages", icon: MessageSquare, badge: "unread-messages" },
       { title: "Calls", url: "/calls", icon: Phone },

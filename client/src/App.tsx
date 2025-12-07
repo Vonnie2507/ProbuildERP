@@ -47,6 +47,7 @@ import Calls from "@/pages/Calls";
 import SubmitReceipt from "@/pages/SubmitReceipt";
 import ExpenseCategoryConfig from "@/pages/ExpenseCategoryConfig";
 import StaffManagement from "@/pages/StaffManagement";
+import StaffExpenses from "@/pages/StaffExpenses";
 import { CallWidget } from "@/components/coaching/CallWidget";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
@@ -247,6 +248,13 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/financial">
           <MainLayout>
             <Financial />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/staff-expenses">
+        <ProtectedRoute path="/staff-expenses">
+          <MainLayout>
+            <StaffExpenses />
           </MainLayout>
         </ProtectedRoute>
       </Route>

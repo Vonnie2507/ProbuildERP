@@ -5805,6 +5805,37 @@ export async function registerRoutes(
     }
   });
 
+  // Get staff spending by category with filters
+  app.get("/api/financial/staff/:staffId/spending-by-category", requireRoles("admin"), async (req, res) => {
+    try {
+      const { staffId } = req.params;
+      const { fromDate, toDate, period } = req.query;
+      
+      const spending = await storage.getStaffSpendingByCategory(staffId, {
+        fromDate: fromDate as string,
+        toDate: toDate as string,
+        period: period as 'week' | 'month' | 'all'
+      });
+      
+      res.json(spending);
+    } catch (error) {
+      console.error("Error fetching staff spending by category:", error);
+      res.status(500).json({ error: "Failed to fetch spending by category" });
+    }
+  });
+
+  // Get outstanding receipts for staff member
+  app.get("/api/financial/staff/:staffId/outstanding-receipts", requireRoles("admin"), async (req, res) => {
+    try {
+      const { staffId } = req.params;
+      const transactions = await storage.getStaffOutstandingReceipts(staffId);
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error fetching outstanding receipts:", error);
+      res.status(500).json({ error: "Failed to fetch outstanding receipts" });
+    }
+  });
+
   // Update transaction (allocate to staff/job, set category)
   app.patch("/api/financial/transactions/:id", requireRoles("admin"), async (req, res) => {
     try {

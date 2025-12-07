@@ -552,6 +552,8 @@ export interface IStorage {
   updateBankTransaction(id: string, transaction: Partial<InsertBankTransaction>): Promise<BankTransaction | undefined>;
   getTransactionsByStaff(staffId: string, filters?: TransactionFilters): Promise<BankTransaction[]>;
   getStaffTransactionSummary(): Promise<{ staffId: string; staffName: string; totalSpent: number; transactionCount: number }[]>;
+  getStaffSpendingByCategory(staffId: string, filters?: { fromDate?: string; toDate?: string; period?: 'week' | 'month' | 'all' }): Promise<{ categoryId: string | null; categoryName: string; totalAmount: number; transactionCount: number }[]>;
+  getStaffOutstandingReceipts(staffId: string): Promise<BankTransaction[]>;
   autoAllocateTransactionsByCardNumber(): Promise<number>;
   autoCategorizeTransactionsByKeywords(): Promise<number>;
 
@@ -3581,6 +3583,70 @@ export class DatabaseStorage implements IStorage {
       totalSpent: parseFloat(r.totalSpent) || 0,
       transactionCount: parseInt(r.transactionCount) || 0,
     }));
+  }
+
+  async getStaffSpendingByCategory(
+    staffId: string, 
+    filters?: { fromDate?: string; toDate?: string; period?: 'week' | 'month' | 'all' }
+  ): Promise<{ categoryId: string | null; categoryName: string; totalAmount: number; transactionCount: number }[]> {
+    const conditions: SQL[] = [
+      eq(bankTransactions.allocatedStaffId, staffId),
+      eq(bankTransactions.direction, 'debit')
+    ];
+
+    // Apply date filters
+    if (filters?.fromDate) {
+      conditions.push(gte(bankTransactions.transactionDate, new Date(filters.fromDate)));
+    }
+    if (filters?.toDate) {
+      conditions.push(lte(bankTransactions.transactionDate, new Date(filters.toDate)));
+    }
+    
+    // Apply period filter if no explicit date range
+    if (!filters?.fromDate && !filters?.toDate && filters?.period) {
+      const now = new Date();
+      if (filters.period === 'week') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        conditions.push(gte(bankTransactions.transactionDate, weekAgo));
+      } else if (filters.period === 'month') {
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        conditions.push(gte(bankTransactions.transactionDate, monthAgo));
+      }
+    }
+
+    const result = await db.select({
+      categoryId: bankTransactions.expenseCategoryId,
+      totalAmount: sql<string>`COALESCE(SUM(ABS(${bankTransactions.amount}::numeric)), 0)`,
+      transactionCount: sql<string>`COUNT(*)`,
+    })
+    .from(bankTransactions)
+    .where(and(...conditions))
+    .groupBy(bankTransactions.expenseCategoryId);
+
+    // Get category names
+    const categoryIds = result.map(r => r.categoryId).filter(Boolean) as string[];
+    let categoryMap = new Map<string, string>();
+    if (categoryIds.length > 0) {
+      const categories = await db.select().from(expenseCategories).where(inArray(expenseCategories.id, categoryIds));
+      categoryMap = new Map(categories.map(c => [c.id, c.name]));
+    }
+
+    return result.map(r => ({
+      categoryId: r.categoryId,
+      categoryName: r.categoryId ? (categoryMap.get(r.categoryId) || 'Unknown') : 'Uncategorized',
+      totalAmount: parseFloat(r.totalAmount) || 0,
+      transactionCount: parseInt(r.transactionCount) || 0,
+    })).sort((a, b) => b.totalAmount - a.totalAmount);
+  }
+
+  async getStaffOutstandingReceipts(staffId: string): Promise<BankTransaction[]> {
+    return db.select().from(bankTransactions)
+      .where(and(
+        eq(bankTransactions.allocatedStaffId, staffId),
+        eq(bankTransactions.direction, 'debit'),
+        isNull(bankTransactions.receiptId)
+      ))
+      .orderBy(desc(bankTransactions.transactionDate));
   }
 
   async autoAllocateTransactionsByCardNumber(): Promise<number> {
