@@ -5837,6 +5837,35 @@ export async function registerRoutes(
     }
   });
 
+  // Validate receipt submission link (public - for checking link validity)
+  app.get("/api/receipts/validate/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const receipt = await storage.getReceiptSubmissionByToken(token);
+      
+      if (!receipt) {
+        return res.status(404).json({ error: "Receipt link not found or expired" });
+      }
+      
+      if (receipt.expiresAt && new Date(receipt.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "Receipt link has expired" });
+      }
+      
+      // Return minimal info for validation
+      res.json({
+        id: receipt.id,
+        status: receipt.status,
+        expectedAmount: receipt.expectedAmount,
+        notes: receipt.notes,
+        expiresAt: receipt.expiresAt,
+        createdAt: receipt.createdAt
+      });
+    } catch (error) {
+      console.error("Error validating receipt token:", error);
+      res.status(500).json({ error: "Failed to validate receipt link" });
+    }
+  });
+
   // Get receipt submission by token (public - for staff to upload)
   app.get("/api/receipts/submit/:token", async (req, res) => {
     try {

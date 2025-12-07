@@ -44,6 +44,7 @@ import JobStageConfiguration from "@/pages/JobStageConfiguration";
 import KanbanColumnSettings from "@/pages/KanbanColumnSettings";
 import SalesChecklistConfig from "@/pages/SalesChecklistConfig";
 import Calls from "@/pages/Calls";
+import SubmitReceipt from "@/pages/SubmitReceipt";
 import { CallWidget } from "@/components/coaching/CallWidget";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
@@ -114,6 +115,10 @@ function ProtectedRoute({
 function AuthenticatedRouter() {
   return (
     <Switch>
+      {/* Public route for receipt submission - no auth required */}
+      <Route path="/submit-receipt/:token">
+        <SubmitReceipt />
+      </Route>
       <Route path="/login">
         <LoginRedirect />
       </Route>
