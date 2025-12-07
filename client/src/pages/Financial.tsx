@@ -1634,12 +1634,15 @@ export default function Financial() {
                     </div>
                     <div>
                       <Label className="text-xs text-muted-foreground">Type/Direction Column (optional)</Label>
-                      <Select value={columnMapping.direction} onValueChange={(v) => setColumnMapping(prev => ({ ...prev, direction: v }))}>
+                      <Select 
+                        value={columnMapping.direction || "__none__"} 
+                        onValueChange={(v) => setColumnMapping(prev => ({ ...prev, direction: v === "__none__" ? "" : v }))}
+                      >
                         <SelectTrigger data-testid="select-direction-column">
                           <SelectValue placeholder="Select column" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">None (use amount sign)</SelectItem>
+                          <SelectItem value="__none__">None (use amount sign)</SelectItem>
                           {importPreview[0].map((header, idx) => (
                             <SelectItem key={idx} value={idx.toString()}>{header}</SelectItem>
                           ))}
