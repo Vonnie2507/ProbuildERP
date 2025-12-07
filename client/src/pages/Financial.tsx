@@ -1564,7 +1564,7 @@ export default function Financial() {
 
       {/* CSV Import Dialog */}
       <Dialog open={showImportDialog} onOpenChange={setShowImportDialog}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileSpreadsheet className="h-5 w-5" />
@@ -1592,7 +1592,7 @@ export default function Financial() {
               <>
                 <div className="space-y-3">
                   <Label className="text-sm font-medium">Column Mapping</Label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <Label className="text-xs text-muted-foreground">Date Column</Label>
                       <Select value={columnMapping.date} onValueChange={(v) => setColumnMapping(prev => ({ ...prev, date: v }))}>
