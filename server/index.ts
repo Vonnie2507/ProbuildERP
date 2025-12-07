@@ -10,6 +10,18 @@ import { startAutomationProcessor } from "./automation";
 const app = express();
 const httpServer = createServer(app);
 
+// Health check - registered FIRST before any middleware
+app.get("/health", (_req, res) => {
+  console.log("Health check requested");
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Log ALL incoming requests for debugging
+app.use((req, _res, next) => {
+  console.log(`Incoming request: ${req.method} ${req.path}`);
+  next();
+});
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -103,11 +115,6 @@ app.use((req, res, next) => {
 
     console.error("Error:", err);
     res.status(status).json({ message });
-  });
-
-  // Health check endpoint (before static files)
-  app.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
   // importantly only setup vite in development and after
