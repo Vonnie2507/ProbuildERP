@@ -1,0 +1,36 @@
+I need you to completely fix the Basiq integration in this ERP. Delete all legacy login-based connection logic. Do NOT ever send bank usernames, passwords, customer IDs, or internet banking credentials to Basiq. Westpac Business does NOT support legacy login. Stop using the old /connections endpoint. Remove every field and every piece of code that collects or sends loginId, password, or any kind of credential.
+
+Implement ONLY the correct Basiq CDR Open Banking consent flow.
+
+Use these exact business details:
+businessName: "Probuild PVC"
+businessIdNo: "29688327479"
+organisationType: "COMPANY"
+
+When creating a consent, you MUST call:
+POST https://au-api.basiq.io/consents
+with this exact JSON body:
+{
+  "type": "cdr",
+  "permissions": [
+    "ACCOUNT_BASIC_ACCESS",
+    "ACCOUNT_DETAIL",
+    "TRANSACTION_DETAIL"
+  ],
+  "businessName": "Probuild PVC",
+  "businessIdNo": "29688327479",
+  "organisationType": "COMPANY",
+  "sharingDuration": 365
+}
+
+Use BASIQ_API_KEY from environment variables for authentication. Store the returned consentId.
+
+Next, generate a Basiq Connect URL using the consentId and BASIQ_REDIRECT_URI. Return that URL to the frontend so the user is redirected to the Basiq Connect flow. The user must authenticate on the Westpac Open Banking website, NOT inside my ERP.
+
+Update the frontend: remove all username/password fields, remove all businessId fields, remove every field that was previously used for the legacy login flow. The only thing the user should see is a “Connect Bank Account” button. When clicked, it should call the backend to create the consent and then redirect to the connectUrl returned by the backend.
+
+Create a callback endpoint that receives the redirect from Basiq. It must confirm the consent is active, then fetch accounts from Basiq and store the accountId, institution, masked account number, and any other returned metadata.
+
+Create a webhook endpoint at POST /api/basiq/webhook that logs the payload now and can later be used to sync transactions.
+
+Important: Stop using any old code paths. Delete or refactor any files that still reference login-based banking access. Always send the ABN 29688327479 as businessIdNo. Always use CDR flow. Never request banking credentials from the user. Use consentId and Connect Flow only. Follow this instruction exactly.
