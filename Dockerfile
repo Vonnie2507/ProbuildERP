@@ -19,5 +19,5 @@ RUN npm run build
 # Expose port
 EXPOSE 5000
 
-# Start the application
-CMD ["npm", "run", "start"]
+# Start the application (push database schema first, then start)
+CMD ["sh", "-c", "npm run db:push && npm run start"]
