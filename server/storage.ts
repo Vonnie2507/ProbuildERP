@@ -673,6 +673,8 @@ export interface TransactionFilters {
   limit?: number;
   offset?: number;
   search?: string;
+  minAmount?: number;
+  maxAmount?: number;
 }
 
 export interface DashboardStats {
@@ -3488,6 +3490,12 @@ export class DatabaseStorage implements IStorage {
         ilike(bankTransactions.description, `%${filters.search}%`),
         ilike(bankTransactions.merchantName, `%${filters.search}%`)
       ));
+    }
+    if (filters?.minAmount !== undefined) {
+      conditions.push(gte(bankTransactions.amount, filters.minAmount.toString()));
+    }
+    if (filters?.maxAmount !== undefined) {
+      conditions.push(lte(bankTransactions.amount, filters.maxAmount.toString()));
     }
 
     let query = conditions.length > 0 

@@ -236,6 +236,118 @@ function TransactionRow({ transaction }: { transaction: BankTransaction }) {
   );
 }
 
+interface ExpenseCategory {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+function TransactionRowCompact({ transaction }: { transaction: BankTransaction }) {
+  const { toast } = useToast();
+  const isCredit = transaction.direction === "credit";
+  
+  const { data: users = [] } = useQuery<{ id: string; firstName: string; lastName: string }[]>({
+    queryKey: ["/api/users"],
+  });
+  
+  const { data: categories = [] } = useQuery<ExpenseCategory[]>({
+    queryKey: ["/api/expense-categories"],
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: { allocatedStaffId?: string | null; expenseCategoryId?: string | null }) => {
+      return apiRequest("PATCH", `/api/financial/transactions/${transaction.id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ predicate: (query) => 
+        typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('/api/financial')
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to update transaction",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleStaffChange = (value: string) => {
+    updateMutation.mutate({ allocatedStaffId: value === "unassigned" ? null : value });
+  };
+
+  const handleCategoryChange = (value: string) => {
+    updateMutation.mutate({ expenseCategoryId: value === "uncategorized" ? null : value });
+  };
+
+  const staffMembers = users.filter(u => u.firstName && u.lastName);
+  const currentStaff = staffMembers.find(s => s.id === transaction.allocatedStaffId);
+  const currentCategory = categories.find(c => c.id === transaction.expenseCategoryId);
+  
+  return (
+    <TableRow className="text-xs" data-testid={`transaction-row-${transaction.id}`}>
+      <TableCell className="py-1.5 text-muted-foreground">
+        {transaction.postDate ? format(new Date(transaction.postDate), "dd/MM") : "-"}
+      </TableCell>
+      <TableCell className="py-1.5">
+        <div className="flex items-center gap-1.5">
+          <div className={`h-5 w-5 rounded-full flex items-center justify-center flex-shrink-0 ${isCredit ? "bg-green-100" : "bg-red-100"}`}>
+            {isCredit ? (
+              <ArrowDownRight className="h-3 w-3 text-green-600" />
+            ) : (
+              <ArrowUpRight className="h-3 w-3 text-red-600" />
+            )}
+          </div>
+          <span className="truncate" title={transaction.description || ""}>
+            {transaction.description}
+          </span>
+        </div>
+      </TableCell>
+      <TableCell className="py-1.5">
+        <Select
+          value={transaction.expenseCategoryId || "uncategorized"}
+          onValueChange={handleCategoryChange}
+        >
+          <SelectTrigger className="h-6 text-xs border-0 bg-transparent hover:bg-muted px-1 w-full" data-testid={`select-category-${transaction.id}`}>
+            <SelectValue placeholder="Select category..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="uncategorized">
+              <span className="text-muted-foreground">Uncategorized</span>
+            </SelectItem>
+            {categories.map(cat => (
+              <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell className="py-1.5">
+        <Select
+          value={transaction.allocatedStaffId || "unassigned"}
+          onValueChange={handleStaffChange}
+        >
+          <SelectTrigger className="h-6 text-xs border-0 bg-transparent hover:bg-muted px-1 w-full" data-testid={`select-staff-${transaction.id}`}>
+            <SelectValue placeholder="Assign staff..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="unassigned">
+              <span className="text-muted-foreground">Unassigned</span>
+            </SelectItem>
+            {staffMembers.map(staff => (
+              <SelectItem key={staff.id} value={staff.id}>
+                {staff.firstName} {staff.lastName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </TableCell>
+      <TableCell className={`py-1.5 text-right font-medium ${isCredit ? "text-green-600" : "text-red-600"}`}>
+        {isCredit ? "+" : "-"}{formatCurrency(Math.abs(parseFloat(transaction.amount || "0")))}
+      </TableCell>
+    </TableRow>
+  );
+}
+
 function EmptyState({ type }: { type: "accounts" | "transactions" | "connections" }) {
   const messages = {
     accounts: {
@@ -754,6 +866,10 @@ export default function Financial() {
   const [activeTab, setActiveTab] = useState("overview");
   const [searchQuery, setSearchQuery] = useState("");
   const [directionFilter, setDirectionFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [minAmount, setMinAmount] = useState<string>("");
+  const [maxAmount, setMaxAmount] = useState<string>("");
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [businessName, setBusinessName] = useState("");
   const [businessIdNo, setBusinessIdNo] = useState("");
@@ -824,11 +940,38 @@ export default function Financial() {
     enabled: isAdmin,
   });
 
+  // Quick date filter helpers
+  const setQuickDateFilter = (preset: 'last7' | 'last30' | 'thisMonth' | 'clear') => {
+    const today = new Date();
+    if (preset === 'last7') {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 7);
+      setDateFrom(from.toISOString().split('T')[0]);
+      setDateTo(today.toISOString().split('T')[0]);
+    } else if (preset === 'last30') {
+      const from = new Date(today);
+      from.setDate(from.getDate() - 30);
+      setDateFrom(from.toISOString().split('T')[0]);
+      setDateTo(today.toISOString().split('T')[0]);
+    } else if (preset === 'thisMonth') {
+      const from = new Date(today.getFullYear(), today.getMonth(), 1);
+      setDateFrom(from.toISOString().split('T')[0]);
+      setDateTo(today.toISOString().split('T')[0]);
+    } else {
+      setDateFrom("");
+      setDateTo("");
+    }
+  };
+
   // Build the transactions URL with query parameters
   const transactionsUrl = (() => {
     const params = new URLSearchParams();
     if (searchQuery) params.set("search", searchQuery);
     if (directionFilter !== "all") params.set("direction", directionFilter);
+    if (dateFrom) params.set("fromDate", dateFrom);
+    if (dateTo) params.set("toDate", dateTo);
+    if (minAmount) params.set("minAmount", minAmount);
+    if (maxAmount) params.set("maxAmount", maxAmount);
     const queryString = params.toString();
     return queryString ? `/api/financial/transactions?${queryString}` : "/api/financial/transactions";
   })();
@@ -1319,33 +1462,13 @@ export default function Financial() {
         <TabsContent value="transactions" className="mt-6 space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <CardTitle>All Transactions</CardTitle>
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search transactions..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-9 w-[250px]"
-                      data-testid="input-search-transactions"
-                    />
-                  </div>
-                  <Select value={directionFilter} onValueChange={setDirectionFilter}>
-                    <SelectTrigger className="w-[140px]" data-testid="select-direction-filter">
-                      <Filter className="h-4 w-4 mr-2" />
-                      <SelectValue placeholder="Filter" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All</SelectItem>
-                      <SelectItem value="credit">Credits Only</SelectItem>
-                      <SelectItem value="debit">Debits Only</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <CardTitle>All Transactions</CardTitle>
                   {isAdmin && (
                     <Button
                       variant="outline"
+                      size="sm"
                       onClick={() => setShowImportDialog(true)}
                       data-testid="button-import-csv"
                     >
@@ -1354,40 +1477,136 @@ export default function Financial() {
                     </Button>
                   )}
                 </div>
+                
+                {/* Quick date filters */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm text-muted-foreground">Quick:</span>
+                  <Button
+                    variant={dateFrom && !dateTo ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setQuickDateFilter('last7')}
+                    data-testid="button-last-7-days"
+                  >
+                    Last 7 Days
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setQuickDateFilter('thisMonth')}
+                    data-testid="button-this-month"
+                  >
+                    This Month
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setQuickDateFilter('last30')}
+                    data-testid="button-last-30-days"
+                  >
+                    Last 30 Days
+                  </Button>
+                  {(dateFrom || dateTo) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setQuickDateFilter('clear')}
+                      data-testid="button-clear-date"
+                    >
+                      Clear Dates
+                    </Button>
+                  )}
+                </div>
+
+                {/* Filters row */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-8 h-8 w-[180px] text-sm"
+                      data-testid="input-search-transactions"
+                    />
+                  </div>
+                  <Select value={directionFilter} onValueChange={setDirectionFilter}>
+                    <SelectTrigger className="w-[110px] h-8 text-sm" data-testid="select-direction-filter">
+                      <SelectValue placeholder="Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="credit">Credits</SelectItem>
+                      <SelectItem value="debit">Debits</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    className="h-8 w-[130px] text-sm"
+                    placeholder="From"
+                    data-testid="input-date-from"
+                  />
+                  <Input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    className="h-8 w-[130px] text-sm"
+                    placeholder="To"
+                    data-testid="input-date-to"
+                  />
+                  <Input
+                    type="number"
+                    value={minAmount}
+                    onChange={(e) => setMinAmount(e.target.value)}
+                    placeholder="Min $"
+                    className="h-8 w-[80px] text-sm"
+                    data-testid="input-min-amount"
+                  />
+                  <Input
+                    type="number"
+                    value={maxAmount}
+                    onChange={(e) => setMaxAmount(e.target.value)}
+                    placeholder="Max $"
+                    className="h-8 w-[80px] text-sm"
+                    data-testid="input-max-amount"
+                  />
+                </div>
               </div>
             </CardHeader>
             <CardContent>
               {transactionsLoading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3, 4, 5].map(i => (
-                    <div key={i} className="flex items-center gap-3 py-2">
-                      <Skeleton className="h-8 w-8 rounded-full" />
-                      <div className="flex-1">
-                        <Skeleton className="h-4 w-40 mb-1" />
-                        <Skeleton className="h-3 w-24" />
-                      </div>
-                      <Skeleton className="h-5 w-20" />
-                    </div>
+                <div className="space-y-1">
+                  {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                    <Skeleton key={i} className="h-8 w-full" />
                   ))}
                 </div>
               ) : transactions.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Transaction</TableHead>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((tx) => (
-                      <TransactionRow key={tx.id} transaction={tx} />
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto">
+                  <Table className="text-sm">
+                    <TableHeader>
+                      <TableRow className="text-xs">
+                        <TableHead className="py-2 w-[80px]">Date</TableHead>
+                        <TableHead className="py-2 min-w-[300px]">Description</TableHead>
+                        <TableHead className="py-2 w-[120px]">Category</TableHead>
+                        <TableHead className="py-2 w-[120px]">Staff</TableHead>
+                        <TableHead className="py-2 text-right w-[100px]">Amount</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {transactions.map((tx) => (
+                        <TransactionRowCompact key={tx.id} transaction={tx} />
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               ) : (
                 <EmptyState type="transactions" />
+              )}
+              {transactions.length > 0 && (
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Showing {transactions.length} transaction{transactions.length !== 1 ? 's' : ''}
+                </div>
               )}
             </CardContent>
           </Card>

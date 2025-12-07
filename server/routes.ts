@@ -5650,7 +5650,7 @@ export async function registerRoutes(
   // Get all transactions across all accounts
   app.get("/api/financial/transactions", requireRoles("admin", "scheduler", "production_manager"), async (req, res) => {
     try {
-      const { fromDate, toDate, category, direction, limit = "100", offset = "0", search } = req.query;
+      const { fromDate, toDate, category, direction, limit = "500", offset = "0", search, minAmount, maxAmount } = req.query;
       
       const transactions = await storage.getAllBankTransactions({
         fromDate: fromDate as string,
@@ -5659,7 +5659,9 @@ export async function registerRoutes(
         direction: direction as "credit" | "debit",
         limit: parseInt(limit as string),
         offset: parseInt(offset as string),
-        search: search as string
+        search: search as string,
+        minAmount: minAmount ? parseFloat(minAmount as string) : undefined,
+        maxAmount: maxAmount ? parseFloat(maxAmount as string) : undefined,
       });
       
       res.json(transactions);
