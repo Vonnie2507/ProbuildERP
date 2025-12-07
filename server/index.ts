@@ -1,7 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
-import { Pool } from "pg";
+import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -24,8 +23,7 @@ declare module "express-session" {
   }
 }
 
-const PgStore = connectPgSimple(session);
-const sessionPool = new Pool({ connectionString: process.env.DATABASE_URL });
+const SessionStore = MemoryStore(session);
 
 // Require SESSION_SECRET in production
 const sessionSecret = process.env.SESSION_SECRET;
@@ -38,13 +36,11 @@ app.use(
     secret: sessionSecret || "dev-only-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
-    store: new PgStore({
-      pool: sessionPool,
-      tableName: "session",
-      createTableIfMissing: true,
+    store: new SessionStore({
+      checkPeriod: 86400000, // prune expired entries every 24h
     }),
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: false, // Set to false for now to avoid HTTPS issues
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     },
