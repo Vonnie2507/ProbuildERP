@@ -2390,6 +2390,7 @@ export type ExpenseCategory = typeof expenseCategories.$inferSelect;
 // Receipt submission status enum
 export const receiptStatusEnum = pgEnum("receipt_status", [
   "pending",
+  "submitted",
   "reviewed",
   "matched",
   "rejected"
@@ -2398,13 +2399,20 @@ export const receiptStatusEnum = pgEnum("receipt_status", [
 // Receipt Submissions - staff can upload receipts via shareable link
 export const receiptSubmissions = pgTable("receipt_submissions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  staffId: varchar("staff_id").references(() => users.id),
   submittedByStaffId: varchar("submitted_by_staff_id").references(() => users.id),
   submitterName: varchar("submitter_name", { length: 200 }),
-  photoUrl: text("photo_url").notNull(),
+  imageUrl: text("image_url"),
+  photoUrl: text("photo_url"),
   expenseCategoryId: varchar("expense_category_id").references(() => expenseCategories.id),
   allocatedJobId: varchar("allocated_job_id").references(() => jobs.id),
   noJobAllocation: boolean("no_job_allocation").default(false),
+  description: text("description"),
+  expectedAmount: decimal("expected_amount", { precision: 15, scale: 2 }),
+  actualAmount: decimal("actual_amount", { precision: 15, scale: 2 }),
   amount: decimal("amount", { precision: 15, scale: 2 }),
+  merchantName: varchar("merchant_name", { length: 200 }),
+  purchaseDate: timestamp("purchase_date"),
   notes: text("notes"),
   status: receiptStatusEnum("status").default("pending").notNull(),
   matchedTransactionId: varchar("matched_transaction_id"),
@@ -2412,6 +2420,8 @@ export const receiptSubmissions = pgTable("receipt_submissions", {
   reviewedAt: timestamp("reviewed_at"),
   reviewNotes: text("review_notes"),
   submissionToken: varchar("submission_token", { length: 100 }).notNull().unique(),
+  expiresAt: timestamp("expires_at"),
+  submittedAt: timestamp("submitted_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -2420,7 +2430,7 @@ export const insertReceiptSubmissionSchema = createInsertSchema(receiptSubmissio
   id: true, 
   createdAt: true,
   updatedAt: true
-});
+}).partial({ photoUrl: true, imageUrl: true });
 
 export type InsertReceiptSubmission = z.infer<typeof insertReceiptSubmissionSchema>;
 export type ReceiptSubmission = typeof receiptSubmissions.$inferSelect;

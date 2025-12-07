@@ -1,5 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
+import crypto from "crypto";
 import { storage } from "./storage";
 import { 
   insertClientSchema, insertLeadSchema, insertProductSchema, 
@@ -15,7 +16,8 @@ import {
   section1SalesSchema, section2ProductsMetaSchema, section3ProductionSchema,
   section4ScheduleSchema, section5InstallSchema,
   insertLiveDocumentTemplateSchema,
-  insertLeadActivitySchema, insertLeadTaskSchema
+  insertLeadActivitySchema, insertLeadTaskSchema,
+  type User
 } from "@shared/schema";
 import { z } from "zod";
 import Stripe from "stripe";
@@ -5626,6 +5628,332 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching financial overview:", error);
       res.status(500).json({ error: "Failed to fetch overview" });
+    }
+  });
+
+  // ============================================
+  // STAFF TRANSACTIONS / EXPENSE MANAGEMENT
+  // ============================================
+
+  // Get staff transaction summary
+  app.get("/api/financial/staff-summary", requireRoles("admin"), async (req, res) => {
+    try {
+      const summary = await storage.getStaffTransactionSummary();
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching staff summary:", error);
+      res.status(500).json({ error: "Failed to fetch staff summary" });
+    }
+  });
+
+  // Get transactions for specific staff member
+  app.get("/api/financial/staff/:staffId/transactions", requireRoles("admin"), async (req, res) => {
+    try {
+      const { staffId } = req.params;
+      const { fromDate, toDate, category, limit } = req.query;
+      
+      const transactions = await storage.getTransactionsByStaff(staffId, {
+        fromDate: fromDate as string,
+        toDate: toDate as string,
+        category: category as string,
+        limit: limit ? parseInt(limit as string) : undefined
+      });
+      
+      res.json(transactions);
+    } catch (error) {
+      console.error("Error fetching staff transactions:", error);
+      res.status(500).json({ error: "Failed to fetch staff transactions" });
+    }
+  });
+
+  // Update transaction (allocate to staff/job, set category)
+  app.patch("/api/financial/transactions/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { allocatedStaffId, allocatedJobId, expenseCategoryId, allocationNotes } = req.body;
+      
+      const updated = await storage.updateBankTransaction(id, {
+        allocatedStaffId,
+        allocatedJobId,
+        expenseCategoryId,
+        allocationNotes
+      });
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Transaction not found" });
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+      res.status(500).json({ error: "Failed to update transaction" });
+    }
+  });
+
+  // Auto-allocate transactions by card number
+  app.post("/api/financial/auto-allocate", requireRoles("admin"), async (req, res) => {
+    try {
+      const count = await storage.autoAllocateTransactionsByCardNumber();
+      res.json({ 
+        success: true, 
+        allocatedCount: count,
+        message: `Auto-allocated ${count} transactions` 
+      });
+    } catch (error) {
+      console.error("Error auto-allocating transactions:", error);
+      res.status(500).json({ error: "Failed to auto-allocate transactions" });
+    }
+  });
+
+  // ============================================
+  // EXPENSE CATEGORIES
+  // ============================================
+
+  // Get all expense categories
+  app.get("/api/expense-categories", requireRoles("admin", "scheduler", "production_manager"), async (req, res) => {
+    try {
+      const categories = await storage.getExpenseCategories();
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching expense categories:", error);
+      res.status(500).json({ error: "Failed to fetch expense categories" });
+    }
+  });
+
+  // Get active expense categories only
+  app.get("/api/expense-categories/active", async (req, res) => {
+    try {
+      const categories = await storage.getActiveExpenseCategories();
+      res.json(categories);
+    } catch (error) {
+      console.error("Error fetching active expense categories:", error);
+      res.status(500).json({ error: "Failed to fetch expense categories" });
+    }
+  });
+
+  // Create expense category
+  app.post("/api/expense-categories", requireRoles("admin"), async (req, res) => {
+    try {
+      const category = await storage.createExpenseCategory(req.body);
+      res.status(201).json(category);
+    } catch (error) {
+      console.error("Error creating expense category:", error);
+      res.status(500).json({ error: "Failed to create expense category" });
+    }
+  });
+
+  // Update expense category
+  app.patch("/api/expense-categories/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updated = await storage.updateExpenseCategory(id, req.body);
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating expense category:", error);
+      res.status(500).json({ error: "Failed to update expense category" });
+    }
+  });
+
+  // Delete expense category
+  app.delete("/api/expense-categories/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteExpenseCategory(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting expense category:", error);
+      res.status(500).json({ error: "Failed to delete expense category" });
+    }
+  });
+
+  // ============================================
+  // RECEIPT SUBMISSIONS
+  // ============================================
+
+  // Get all receipt submissions (admin)
+  app.get("/api/receipts", requireRoles("admin"), async (req, res) => {
+    try {
+      const { status } = req.query;
+      const receipts = await storage.getReceiptSubmissions(
+        status ? { status: status as string } : undefined
+      );
+      res.json(receipts);
+    } catch (error) {
+      console.error("Error fetching receipts:", error);
+      res.status(500).json({ error: "Failed to fetch receipts" });
+    }
+  });
+
+  // Get pending receipts (admin)
+  app.get("/api/receipts/pending", requireRoles("admin"), async (req, res) => {
+    try {
+      const receipts = await storage.getPendingReceipts();
+      res.json(receipts);
+    } catch (error) {
+      console.error("Error fetching pending receipts:", error);
+      res.status(500).json({ error: "Failed to fetch pending receipts" });
+    }
+  });
+
+  // Create receipt submission link (admin generates link for staff)
+  app.post("/api/receipts/create-link", requireRoles("admin"), async (req, res) => {
+    try {
+      const { staffId, description, amount, expenseCategoryId } = req.body;
+      
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7); // 7-day expiry
+      
+      const receipt = await storage.createReceiptSubmission({
+        submissionToken: token,
+        staffId,
+        description,
+        expectedAmount: amount,
+        expenseCategoryId,
+        status: "pending",
+        expiresAt
+      });
+      
+      const submissionUrl = `${req.protocol}://${req.get("host")}/submit-receipt/${token}`;
+      
+      res.status(201).json({
+        receipt,
+        submissionUrl,
+        expiresAt
+      });
+    } catch (error) {
+      console.error("Error creating receipt link:", error);
+      res.status(500).json({ error: "Failed to create receipt link" });
+    }
+  });
+
+  // Get receipt submission by token (public - for staff to upload)
+  app.get("/api/receipts/submit/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const receipt = await storage.getReceiptSubmissionByToken(token);
+      
+      if (!receipt) {
+        return res.status(404).json({ error: "Receipt link not found or expired" });
+      }
+      
+      if (receipt.expiresAt && new Date(receipt.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "Receipt link has expired" });
+      }
+      
+      if (receipt.status !== "pending") {
+        return res.status(400).json({ error: "Receipt has already been submitted" });
+      }
+      
+      // Get active categories for the form
+      const categories = await storage.getActiveExpenseCategories();
+      
+      res.json({ receipt, categories });
+    } catch (error) {
+      console.error("Error fetching receipt by token:", error);
+      res.status(500).json({ error: "Failed to fetch receipt" });
+    }
+  });
+
+  // Submit receipt (public - staff uploads via link)
+  app.post("/api/receipts/submit/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const { imageUrl, actualAmount, expenseCategoryId, notes, merchantName, purchaseDate } = req.body;
+      
+      const receipt = await storage.getReceiptSubmissionByToken(token);
+      
+      if (!receipt) {
+        return res.status(404).json({ error: "Receipt link not found" });
+      }
+      
+      if (receipt.expiresAt && new Date(receipt.expiresAt) < new Date()) {
+        return res.status(410).json({ error: "Receipt link has expired" });
+      }
+      
+      if (receipt.status !== "pending") {
+        return res.status(400).json({ error: "Receipt has already been submitted" });
+      }
+      
+      const updated = await storage.updateReceiptSubmission(receipt.id, {
+        imageUrl,
+        actualAmount,
+        expenseCategoryId: expenseCategoryId || receipt.expenseCategoryId,
+        notes,
+        merchantName,
+        purchaseDate: purchaseDate ? new Date(purchaseDate) : undefined,
+        status: "submitted",
+        submittedAt: new Date()
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error submitting receipt:", error);
+      res.status(500).json({ error: "Failed to submit receipt" });
+    }
+  });
+
+  // Match receipt to transaction (admin)
+  app.post("/api/receipts/:id/match", requireRoles("admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { transactionId } = req.body;
+      const user = req.user as User;
+      
+      if (!transactionId) {
+        return res.status(400).json({ error: "Transaction ID required" });
+      }
+      
+      await storage.matchReceiptToTransaction(id, transactionId, user.id);
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error matching receipt:", error);
+      res.status(500).json({ error: "Failed to match receipt" });
+    }
+  });
+
+  // Update receipt (admin)
+  app.patch("/api/receipts/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const updated = await storage.updateReceiptSubmission(id, req.body);
+      
+      if (!updated) {
+        return res.status(404).json({ error: "Receipt not found" });
+      }
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating receipt:", error);
+      res.status(500).json({ error: "Failed to update receipt" });
+    }
+  });
+
+  // Delete receipt (admin)
+  app.delete("/api/receipts/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const { id } = req.params;
+      const deleted = await storage.deleteReceiptSubmission(id);
+      
+      if (!deleted) {
+        return res.status(404).json({ error: "Receipt not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting receipt:", error);
+      res.status(500).json({ error: "Failed to delete receipt" });
     }
   });
 
