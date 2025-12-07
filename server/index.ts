@@ -27,9 +27,15 @@ declare module "express-session" {
 const PgStore = connectPgSimple(session);
 const sessionPool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+// Require SESSION_SECRET in production
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret && process.env.NODE_ENV === "production") {
+  throw new Error("SESSION_SECRET environment variable is required in production");
+}
+
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "probuild-pvc-secret-key-change-in-production",
+    secret: sessionSecret || "dev-only-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
     store: new PgStore({

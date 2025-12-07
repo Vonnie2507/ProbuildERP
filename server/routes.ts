@@ -1,7 +1,27 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
+import rateLimit from "express-rate-limit";
 import { storage } from "./storage";
+
+// Rate limiter for login attempts - prevents brute force attacks
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 attempts per window
+  message: { error: "Too many login attempts. Please try again in 15 minutes." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// General API rate limiter
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
+  message: { error: "Too many requests. Please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 import { 
   insertClientSchema, insertLeadSchema, insertProductSchema, 
   insertQuoteSchema, insertJobSchema, insertBOMSchema,
@@ -66,7 +86,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   
   // ============ AUTHENTICATION ============
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", loginLimiter, async (req, res) => {
     try {
       const { email, password } = loginSchema.parse(req.body);
       
@@ -79,7 +99,9 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Account is inactive" });
       }
       
-      if (user.password !== password) {
+      // Compare password using bcrypt
+      const isValidPassword = await bcrypt.compare(password, user.password);
+      if (!isValidPassword) {
         return res.status(401).json({ error: "Invalid email or password" });
       }
       
@@ -1809,7 +1831,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/production-tasks/:id", async (req, res) => {
+  app.patch("/api/production-tasks/:id", requireRoles("admin", "production_manager", "warehouse"), async (req, res) => {
     try {
       const task = await storage.updateProductionTask(req.params.id, req.body);
       if (!task) {
@@ -1823,7 +1845,7 @@ export async function registerRoutes(
   });
 
   // Start production task
-  app.post("/api/production-tasks/:id/start", async (req, res) => {
+  app.post("/api/production-tasks/:id/start", requireRoles("admin", "production_manager", "warehouse"), async (req, res) => {
     try {
       const task = await storage.updateProductionTask(req.params.id, {
         status: "in_progress",
@@ -1841,7 +1863,7 @@ export async function registerRoutes(
   });
 
   // Complete production task
-  app.post("/api/production-tasks/:id/complete", async (req, res) => {
+  app.post("/api/production-tasks/:id/complete", requireRoles("admin", "production_manager", "warehouse"), async (req, res) => {
     try {
       const existingTask = await storage.getProductionTask(req.params.id);
       if (!existingTask) {
@@ -1867,7 +1889,7 @@ export async function registerRoutes(
   });
 
   // ============ INSTALL TASKS ============
-  app.get("/api/install-tasks", async (req, res) => {
+  app.get("/api/install-tasks", requireAuth, async (req, res) => {
     try {
       const { installerId, date, jobId } = req.query;
       let tasks;
@@ -1887,7 +1909,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/install-tasks", async (req, res) => {
+  app.post("/api/install-tasks", requireRoles("admin", "scheduler"), async (req, res) => {
     try {
       const validatedData = insertInstallTaskSchema.parse(req.body);
       const task = await storage.createInstallTask(validatedData);
@@ -1901,7 +1923,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/install-tasks/:id", async (req, res) => {
+  app.patch("/api/install-tasks/:id", requireAuth, async (req, res) => {
     try {
       const task = await storage.updateInstallTask(req.params.id, req.body);
       if (!task) {
@@ -1915,7 +1937,7 @@ export async function registerRoutes(
   });
 
   // Installer check-in
-  app.post("/api/install-tasks/:id/check-in", async (req, res) => {
+  app.post("/api/install-tasks/:id/check-in", requireAuth, async (req, res) => {
     try {
       const task = await storage.updateInstallTask(req.params.id, {
         status: "on_site",
@@ -1932,7 +1954,7 @@ export async function registerRoutes(
   });
 
   // Complete install task
-  app.post("/api/install-tasks/:id/complete", async (req, res) => {
+  app.post("/api/install-tasks/:id/complete", requireAuth, async (req, res) => {
     try {
       const task = await storage.updateInstallTask(req.params.id, {
         status: "completed",
@@ -2219,7 +2241,7 @@ export async function registerRoutes(
     return cleaned;
   };
 
-  app.post("/api/sms/send", async (req, res) => {
+  app.post("/api/sms/send", requireAuth, async (req, res) => {
     try {
       const parseResult = smsSendSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -2275,7 +2297,7 @@ export async function registerRoutes(
   });
 
   // Send install reminder
-  app.post("/api/sms/install-reminder", async (req, res) => {
+  app.post("/api/sms/install-reminder", requireAuth, async (req, res) => {
     try {
       const { jobId } = req.body;
       const job = await storage.getJob(jobId);
@@ -2324,7 +2346,7 @@ export async function registerRoutes(
   });
 
   // Get all SMS logs
-  app.get("/api/sms/logs", async (req, res) => {
+  app.get("/api/sms/logs", requireAuth, async (req, res) => {
     try {
       const logs = await storage.getSMSLogs();
       res.json(logs);
@@ -2335,7 +2357,7 @@ export async function registerRoutes(
   });
 
   // Get SMS conversation by phone
-  app.get("/api/sms/conversation/:phone", async (req, res) => {
+  app.get("/api/sms/conversation/:phone", requireAuth, async (req, res) => {
     try {
       const { phone } = req.params;
       const messages = await storage.getSMSLogsByPhone(phone);
@@ -2347,7 +2369,7 @@ export async function registerRoutes(
   });
 
   // Get SMS logs by related entity (client, job, quote)
-  app.get("/api/sms/entity/:entityType/:entityId", async (req, res) => {
+  app.get("/api/sms/entity/:entityType/:entityId", requireAuth, async (req, res) => {
     try {
       const { entityType, entityId } = req.params;
       const messages = await storage.getSMSLogsByEntity(entityType, entityId);
@@ -2427,9 +2449,9 @@ export async function registerRoutes(
   });
 
   // ============ SMS CONVERSATIONS ============
-  
+
   // Get all conversations
-  app.get("/api/sms/conversations", async (req, res) => {
+  app.get("/api/sms/conversations", requireAuth, async (req, res) => {
     try {
       const conversations = await storage.getSMSConversations();
       res.json(conversations);
@@ -2440,7 +2462,7 @@ export async function registerRoutes(
   });
 
   // Get unread message count
-  app.get("/api/sms/unread-count", async (req, res) => {
+  app.get("/api/sms/unread-count", requireAuth, async (req, res) => {
     try {
       const count = await storage.getUnreadMessageCount();
       res.json({ count });
@@ -2451,7 +2473,7 @@ export async function registerRoutes(
   });
 
   // Get conversation by ID
-  app.get("/api/sms/conversations/:id", async (req, res) => {
+  app.get("/api/sms/conversations/:id", requireAuth, async (req, res) => {
     try {
       const conversation = await storage.getSMSConversation(req.params.id);
       if (!conversation) {
@@ -2465,7 +2487,7 @@ export async function registerRoutes(
   });
 
   // Update conversation (assign, resolve, link to client)
-  app.patch("/api/sms/conversations/:id", async (req, res) => {
+  app.patch("/api/sms/conversations/:id", requireAuth, async (req, res) => {
     try {
       const updateSchema = z.object({
         assignedTo: z.string().nullable().optional(),
@@ -2509,7 +2531,7 @@ export async function registerRoutes(
   });
 
   // Mark messages as read
-  app.post("/api/sms/mark-read", async (req, res) => {
+  app.post("/api/sms/mark-read", requireAuth, async (req, res) => {
     try {
       const { messageIds, conversationId } = req.body;
       
@@ -2530,9 +2552,9 @@ export async function registerRoutes(
   });
 
   // ============ MESSAGE RANGES ============
-  
+
   // Create a message range (bundle of messages attached to an opportunity)
-  app.post("/api/sms/message-ranges", async (req, res) => {
+  app.post("/api/sms/message-ranges", requireAuth, async (req, res) => {
     try {
       const messageRangeInputSchema = insertMessageRangeSchema
         .omit({ messageCount: true })
@@ -2582,7 +2604,7 @@ export async function registerRoutes(
   });
 
   // Get message ranges by lead
-  app.get("/api/sms/message-ranges/lead/:leadId", async (req, res) => {
+  app.get("/api/sms/message-ranges/lead/:leadId", requireAuth, async (req, res) => {
     try {
       const ranges = await storage.getMessageRangesByLead(req.params.leadId);
       res.json(ranges);
@@ -2593,7 +2615,7 @@ export async function registerRoutes(
   });
 
   // Get message ranges by job
-  app.get("/api/sms/message-ranges/job/:jobId", async (req, res) => {
+  app.get("/api/sms/message-ranges/job/:jobId", requireAuth, async (req, res) => {
     try {
       const ranges = await storage.getMessageRangesByJob(req.params.jobId);
       res.json(ranges);
@@ -2604,7 +2626,7 @@ export async function registerRoutes(
   });
 
   // Delete message range
-  app.delete("/api/sms/message-ranges/:id", async (req, res) => {
+  app.delete("/api/sms/message-ranges/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMessageRange(req.params.id);
       res.json({ success: true });
@@ -2619,7 +2641,7 @@ export async function registerRoutes(
   });
 
   // Send quote notification
-  app.post("/api/sms/quote-ready", async (req, res) => {
+  app.post("/api/sms/quote-ready", requireAuth, async (req, res) => {
     try {
       const parseResult = smsQuoteReadySchema.safeParse(req.body);
       if (!parseResult.success) {

@@ -10,6 +10,7 @@ import type { Notification } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 import { useLocation } from "wouter";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/hooks/use-auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,18 +20,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-const CURRENT_USER_ID = "16721d3b-b980-4991-a279-767ce2777b9e";
-
 interface HeaderProps {
   title?: string;
 }
 
 export function Header({ title }: HeaderProps) {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
+  const currentUserId = user?.id;
 
   const { data: notifications = [], isLoading } = useQuery<Notification[]>({
-    queryKey: [`/api/notifications?userId=${CURRENT_USER_ID}`],
+    queryKey: [`/api/notifications?userId=${currentUserId}`],
     refetchInterval: 30000,
+    enabled: !!currentUserId, // Only fetch when user is logged in
   });
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
@@ -40,16 +42,16 @@ export function Header({ title }: HeaderProps) {
       return apiRequest("POST", `/api/notifications/${id}/read`, {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/notifications?userId=${CURRENT_USER_ID}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/notifications?userId=${currentUserId}`] });
     },
   });
 
   const markAllReadMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", "/api/notifications/read-all", { userId: CURRENT_USER_ID });
+      return apiRequest("POST", "/api/notifications/read-all", { userId: currentUserId });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/notifications?userId=${CURRENT_USER_ID}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/notifications?userId=${currentUserId}`] });
     },
   });
 

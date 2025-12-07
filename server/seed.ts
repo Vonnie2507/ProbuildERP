@@ -1,4 +1,5 @@
 import { db } from "./db";
+import bcrypt from "bcryptjs";
 import {
   users, clients, leads, fenceStyles, products, quotes, jobs,
   productionTasks, installTasks, scheduleEvents, payments, notifications
@@ -6,6 +7,9 @@ import {
 
 async function seed() {
   console.log("Seeding database...");
+
+  // Hash the default password for seed users
+  const hashedPassword = await bcrypt.hash("password123", 12);
 
   // Clear existing data (order matters due to foreign key constraints)
   await db.delete(notifications);
@@ -21,10 +25,10 @@ async function seed() {
   await db.delete(fenceStyles);
   await db.delete(users);
 
-  // Create Users
+  // Create Users (using hashed password)
   const [adminUser] = await db.insert(users).values({
     username: "vonnie",
-    password: "password123",
+    password: hashedPassword,
     email: "vonnie@probuildpvc.com.au",
     firstName: "Vonnie",
     lastName: "Bradley",
@@ -34,7 +38,7 @@ async function seed() {
 
   const [salesUser] = await db.insert(users).values({
     username: "dave",
-    password: "password123",
+    password: hashedPassword,
     email: "dave@probuildpvc.com.au",
     firstName: "Dave",
     lastName: "Smith",
@@ -44,7 +48,7 @@ async function seed() {
 
   const [schedulerUser] = await db.insert(users).values({
     username: "craig",
-    password: "password123",
+    password: hashedPassword,
     email: "craig@probuildpvc.com.au",
     firstName: "Craig",
     lastName: "Johnson",
@@ -54,7 +58,7 @@ async function seed() {
 
   const [productionUser] = await db.insert(users).values({
     username: "david.turner",
-    password: "password123",
+    password: hashedPassword,
     email: "david.turner@probuildpvc.com.au",
     firstName: "David",
     lastName: "Turner",
@@ -64,7 +68,7 @@ async function seed() {
 
   const [warehouseUser] = await db.insert(users).values({
     username: "george",
-    password: "password123",
+    password: hashedPassword,
     email: "george@probuildpvc.com.au",
     firstName: "George",
     lastName: "Williams",
@@ -74,7 +78,7 @@ async function seed() {
 
   const [installer1] = await db.insert(users).values({
     username: "jake",
-    password: "password123",
+    password: hashedPassword,
     email: "jake@probuildpvc.com.au",
     firstName: "Jake",
     lastName: "Miller",
@@ -84,7 +88,7 @@ async function seed() {
 
   const [installer2] = await db.insert(users).values({
     username: "jarrad",
-    password: "password123",
+    password: hashedPassword,
     email: "jarrad@probuildpvc.com.au",
     firstName: "Jarrad",
     lastName: "Brown",

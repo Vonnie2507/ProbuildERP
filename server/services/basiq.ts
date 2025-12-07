@@ -4,10 +4,10 @@ import { eq } from "drizzle-orm";
 
 const BASIQ_BASE_URL = "https://au-api.basiq.io";
 
-// Probuild PVC business details for CDR consent
+// Business details for CDR consent - loaded from environment variables
 const BUSINESS_DETAILS = {
-  businessName: "Probuild PVC",
-  businessIdNo: "29688327479",
+  businessName: process.env.BUSINESS_NAME || "Your Business Name",
+  businessIdNo: process.env.BUSINESS_ABN || "",
   organisationType: "COMPANY"
 };
 
@@ -52,12 +52,8 @@ export class BasiqService {
     }
 
     const data = await response.json();
-    
-    console.log("Token response data:", JSON.stringify(data, null, 2));
-    console.log("Access token type:", typeof data.access_token);
-    console.log("Access token length:", data.access_token?.length);
-    console.log("Access token first 50 chars:", data.access_token?.substring(0, 50));
-    
+
+    // Token received successfully (no logging of sensitive data)
     cachedToken = {
       accessToken: data.access_token,
       expiresAt: now + (data.expires_in * 1000) - 60000
@@ -69,9 +65,7 @@ export class BasiqService {
   private async makeRequest(endpoint: string, options: RequestInit = {}): Promise<any> {
     // Get SERVER_ACCESS token for API calls
     const token = await this.getAccessToken();
-    
-    console.log("Making request with Bearer token to:", endpoint);
-    
+
     const response = await fetch(`${BASIQ_BASE_URL}${endpoint}`, {
       ...options,
       headers: {

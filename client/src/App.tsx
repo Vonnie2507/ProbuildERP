@@ -47,6 +47,7 @@ import Calls from "@/pages/Calls";
 import SubmitReceipt from "@/pages/SubmitReceipt";
 import ExpenseCategoryConfig from "@/pages/ExpenseCategoryConfig";
 import { CallWidget } from "@/components/coaching/CallWidget";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   const style = {
@@ -490,16 +491,18 @@ function LoginRedirect() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="light" storageKey="probuild-theme">
-        <TooltipProvider>
-          <AuthProvider>
-            <Toaster />
-            <AuthenticatedRouter />
-          </AuthProvider>
-        </TooltipProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider defaultTheme="light" storageKey="probuild-theme">
+          <TooltipProvider>
+            <AuthProvider>
+              <Toaster />
+              <AuthenticatedRouter />
+            </AuthProvider>
+          </TooltipProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
