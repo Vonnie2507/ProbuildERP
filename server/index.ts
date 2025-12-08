@@ -1,12 +1,15 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
-import connectPgSimple from "connect-pg-simple";
-import { Pool } from "@neondatabase/serverless";
+import MemoryStore from "memorystore";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import type { User } from "@shared/schema";
 import { startAutomationProcessor } from "./automation";
+
+console.log("=== SERVER STARTING ===");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("DATABASE_URL set:", !!process.env.DATABASE_URL);
 
 const app = express();
 const httpServer = createServer(app);
@@ -24,18 +27,15 @@ declare module "express-session" {
   }
 }
 
-const PgStore = connectPgSimple(session);
-const sessionPool = new Pool({ connectionString: process.env.DATABASE_URL });
+const SessionStore = MemoryStore(session);
 
 app.use(
   session({
     secret: process.env.SESSION_SECRET || "probuild-pvc-secret-key-change-in-production",
     resave: false,
     saveUninitialized: false,
-    store: new PgStore({
-      pool: sessionPool,
-      tableName: "session",
-      createTableIfMissing: true,
+    store: new SessionStore({
+      checkPeriod: 86400000, // prune expired entries every 24h
     }),
     cookie: {
       secure: process.env.NODE_ENV === "production",
