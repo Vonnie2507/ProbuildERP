@@ -6,9 +6,14 @@ echo "==================================="
 echo ""
 echo "Environment Information:"
 echo "  NODE_ENV: ${NODE_ENV:-not set}"
-echo "  PORT: ${PORT:-not set}"
+echo "  PORT: ${PORT:-5000}"
 echo "  DATABASE_URL: ${DATABASE_URL:+***set***}"
 echo "  DATABASE_URL: ${DATABASE_URL:-❌ NOT SET}"
+echo ""
+
+# Set default PORT if not provided
+export PORT=${PORT:-5000}
+echo "Will listen on port: $PORT"
 echo ""
 
 # Check if DATABASE_URL is set
