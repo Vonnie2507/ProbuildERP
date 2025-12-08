@@ -7,8 +7,17 @@ import { createServer } from "http";
 import type { User } from "@shared/schema";
 import { startAutomationProcessor } from "./automation";
 
+console.log("=== SERVER STARTING ===");
+console.log("NODE_ENV:", process.env.NODE_ENV);
+console.log("PORT:", process.env.PORT);
+
 const app = express();
 const httpServer = createServer(app);
+
+// ULTRA SIMPLE test - respond immediately with no processing
+app.get("/ping", (_req, res) => {
+  res.send("pong");
+});
 
 // Health check - registered FIRST before any middleware
 app.get("/health", (_req, res) => {
