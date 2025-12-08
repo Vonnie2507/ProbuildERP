@@ -20,4 +20,4 @@ RUN npm run build
 EXPOSE 5000
 
 # Start the application (push database schema first, then start)
-CMD ["sh", "-c", "npm run db:push && npm run start:bundled"]
+CMD ["sh", "-c", "npm run db:push && npm run start"]
