@@ -93,6 +93,11 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Add immediate health check BEFORE routes
+  app.get("/health", (_req, res) => {
+    res.status(200).send("OK");
+  });
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
