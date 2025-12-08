@@ -49,6 +49,12 @@ import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import type { BankTransaction, User } from "@shared/schema";
 
+interface ExpenseCategory {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
 interface StaffSummary {
   staffId: string;
   staffName: string;
@@ -103,6 +109,41 @@ function StaffExpenseDetail({ staffId, staffName }: { staffId: string; staffName
   const { data: transactions = [], isLoading: txLoading } = useQuery<BankTransaction[]>({
     queryKey: [transactionsUrl],
   });
+
+  const { data: categories = [] } = useQuery<ExpenseCategory[]>({
+    queryKey: ["/api/expense-categories"],
+  });
+
+  const updateCategoryMutation = useMutation({
+    mutationFn: async ({ transactionId, expenseCategoryId }: { transactionId: string; expenseCategoryId: string | null }) => {
+      return apiRequest("PATCH", `/api/financial/transactions/${transactionId}`, { expenseCategoryId });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Category Updated",
+        description: "Transaction category has been updated",
+      });
+      queryClient.invalidateQueries({ 
+        predicate: (query) => 
+          typeof query.queryKey[0] === 'string' && 
+          query.queryKey[0].includes('/api/financial')
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Update Failed",
+        description: error.message || "Failed to update category",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleCategoryChange = (transactionId: string, value: string) => {
+    updateCategoryMutation.mutate({ 
+      transactionId, 
+      expenseCategoryId: value === "uncategorized" ? null : value 
+    });
+  };
 
   const totalSpent = categorySpending.reduce((sum, c) => sum + c.totalAmount, 0);
   const maxAmount = Math.max(...categorySpending.map(c => c.totalAmount), 1);
@@ -241,26 +282,50 @@ function StaffExpenseDetail({ staffId, staffName }: { staffId: string; staffName
                 </div>
               ) : (
                 <div className="space-y-2 max-h-[400px] overflow-y-auto">
-                  {transactions.slice(0, 20).map((tx) => (
-                    <div key={tx.id} className="flex items-center justify-between gap-2 py-2 border-b last:border-0">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate">{tx.description}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {tx.transactionDate ? format(new Date(tx.transactionDate), 'dd MMM yyyy') : 'N/A'}
-                        </p>
+                  {transactions.slice(0, 20).map((tx) => {
+                    const currentCategory = categories.find(c => c.id === tx.expenseCategoryId);
+                    return (
+                      <div key={tx.id} className="flex items-center justify-between gap-2 py-2 border-b last:border-0" data-testid={`tx-row-${tx.id}`}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm truncate">{tx.description}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {tx.transactionDate ? format(new Date(tx.transactionDate), 'dd MMM yyyy') : 'N/A'}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Select
+                            value={tx.expenseCategoryId || "uncategorized"}
+                            onValueChange={(value) => handleCategoryChange(tx.id, value)}
+                          >
+                            <SelectTrigger 
+                              className="h-7 text-xs border-muted bg-muted/50 hover:bg-muted w-[130px]" 
+                              data-testid={`select-category-${tx.id}`}
+                            >
+                              <SelectValue placeholder="Category...">
+                                {currentCategory?.name || "Uncategorized"}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="uncategorized">
+                                <span className="text-muted-foreground">Uncategorized</span>
+                              </SelectItem>
+                              {categories.map(cat => (
+                                <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          {!tx.receiptId && (
+                            <Badge variant="outline" className="text-orange-600 border-orange-600">
+                              No Receipt
+                            </Badge>
+                          )}
+                          <span className="font-medium text-red-600 min-w-[80px] text-right">
+                            -{formatCurrency(tx.amount)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {!tx.receiptId && (
-                          <Badge variant="outline" className="text-orange-600 border-orange-600">
-                            No Receipt
-                          </Badge>
-                        )}
-                        <span className="font-medium text-red-600">
-                          -{formatCurrency(tx.amount)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
