@@ -16,9 +16,15 @@ if (!process.env.DATABASE_URL) {
 console.log("✅ DATABASE_URL is set, attempting to connect...");
 console.log("Database host:", new URL(process.env.DATABASE_URL).hostname);
 
+// Configure SSL for Postgres connection
+const sslConfig = process.env.DATABASE_SSL === 'false' 
+  ? false 
+  : { rejectUnauthorized: false }; // Allow self-signed certificates
+
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
   connectionTimeoutMillis: 10000, // 10 second timeout
+  ssl: sslConfig,
 });
 
 export const db = drizzle({ client: pool, schema });
