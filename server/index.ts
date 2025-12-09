@@ -13,10 +13,9 @@ console.log("DATABASE_URL set:", !!process.env.DATABASE_URL);
 
 const app = express();
 
-// Trust proxy - needed for secure cookies behind load balancers/proxies
-if (process.env.NODE_ENV === "production") {
-  app.set("trust proxy", 1);
-}
+// Trust proxy - MUST be set before any middleware that checks X-Forwarded-For
+// Railway, Render, and other platforms use reverse proxies
+app.set("trust proxy", 1);
 
 const httpServer = createServer(app);
 
