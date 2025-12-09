@@ -88,18 +88,23 @@ export async function registerRoutes(
   // ============ AUTHENTICATION ============
   app.post("/api/auth/login", async (req, res) => {
     try {
+      console.log("[LOGIN] Attempt from:", req.ip, "Headers:", JSON.stringify(req.headers));
       const { email, password } = loginSchema.parse(req.body);
       
+      console.log("[LOGIN] Email:", email);
       const user = await storage.getUserByEmail(email);
       if (!user) {
+        console.log("[LOGIN] User not found:", email);
         return res.status(401).json({ error: "Invalid email or password" });
       }
       
       if (!user.isActive) {
+        console.log("[LOGIN] User inactive:", email);
         return res.status(401).json({ error: "Account is inactive" });
       }
       
       if (user.password !== password) {
+        console.log("[LOGIN] Invalid password for:", email);
         return res.status(401).json({ error: "Invalid email or password" });
       }
       
@@ -117,12 +122,21 @@ export async function registerRoutes(
       req.session.userId = user.id;
       req.session.user = sessionUser;
       
-      res.json({ user: sessionUser });
+      // Force session save before responding
+      req.session.save((err) => {
+        if (err) {
+          console.error("[LOGIN] Session save error:", err);
+          return res.status(500).json({ error: "Failed to save session" });
+        }
+        console.log("[LOGIN] Success for:", email, "SessionID:", req.sessionID);
+        res.json({ user: sessionUser });
+      });
     } catch (error) {
       if (error instanceof z.ZodError) {
+        console.log("[LOGIN] Validation error:", error.errors);
         return res.status(400).json({ error: error.errors });
       }
-      console.error("Error during login:", error);
+      console.error("[LOGIN] Error during login:", error);
       res.status(500).json({ error: "Failed to login" });
     }
   });
@@ -139,16 +153,20 @@ export async function registerRoutes(
   });
   
   app.get("/api/auth/me", async (req, res) => {
+    console.log("[AUTH/ME] SessionID:", req.sessionID, "UserID:", req.session.userId, "Cookie:", req.headers.cookie);
     if (!req.session.userId || !req.session.user) {
+      console.log("[AUTH/ME] No session found");
       return res.status(401).json({ error: "Not authenticated" });
     }
     
     const user = await storage.getUser(req.session.userId);
     if (!user || !user.isActive) {
+      console.log("[AUTH/ME] User not found or inactive:", req.session.userId);
       req.session.destroy(() => {});
       return res.status(401).json({ error: "Session invalid" });
     }
     
+    console.log("[AUTH/ME] Success for:", user.email);
     res.json({
       user: {
         id: user.id,

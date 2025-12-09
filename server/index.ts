@@ -12,6 +12,12 @@ console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("DATABASE_URL set:", !!process.env.DATABASE_URL);
 
 const app = express();
+
+// Trust proxy - needed for secure cookies behind load balancers/proxies
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -38,10 +44,13 @@ app.use(
       checkPeriod: 86400000, // prune expired entries every 24h
     }),
     cookie: {
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.NODE_ENV === "production" && process.env.COOKIE_SECURE !== "false",
       httpOnly: true,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      domain: process.env.COOKIE_DOMAIN || undefined,
     },
+    proxy: process.env.NODE_ENV === "production", // trust proxy headers
   })
 );
 
