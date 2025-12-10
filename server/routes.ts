@@ -2,8 +2,10 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import crypto from "crypto";
 import { storage } from "./storage";
-import { 
-  insertClientSchema, insertLeadSchema, insertProductSchema, 
+import { db } from "./db";
+import { eq, desc } from "drizzle-orm";
+import {
+  insertClientSchema, insertLeadSchema, insertProductSchema,
   insertQuoteSchema, insertJobSchema, insertBOMSchema,
   insertProductionTaskSchema, insertInstallTaskSchema,
   insertScheduleEventSchema, insertPaymentSchema,
@@ -17,6 +19,8 @@ import {
   section4ScheduleSchema, section5InstallSchema,
   insertLiveDocumentTemplateSchema,
   insertLeadActivitySchema, insertLeadTaskSchema,
+  importSessions, importRecords,
+  emailAccounts, emailThreads, emails, emailAttachments, emailTemplates,
   type User
 } from "@shared/schema";
 import { z } from "zod";
@@ -6284,6 +6288,714 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error importing products:", error);
       res.status(500).json({ error: "Failed to import products" });
+    }
+  });
+
+  // Import Quotes
+  app.post("/api/import/quotes", async (req, res) => {
+    try {
+      const { data, source = "csv_upload" } = req.body;
+      if (!Array.isArray(data)) {
+        return res.status(400).json({ error: "Data must be an array" });
+      }
+
+      let success = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      // Create import session
+      const session = await db.insert(importSessions).values({
+        source: source as any,
+        entityType: "quotes",
+        status: "processing",
+        totalRows: data.length,
+        importedBy: (req as any).user?.id || null,
+        startedAt: new Date(),
+      }).returning();
+
+      const sessionId = session[0]?.id;
+
+      for (const row of data) {
+        try {
+          const clientName = row.clientName?.trim();
+          const siteAddress = row.siteAddress?.trim();
+          const totalPrice = row.totalPrice;
+
+          if (!clientName || !siteAddress || totalPrice === undefined) {
+            errors.push(`Row missing required fields: clientName=${clientName || 'missing'}, siteAddress=${siteAddress || 'missing'}`);
+            failed++;
+
+            // Log failed record
+            if (sessionId) {
+              await db.insert(importRecords).values({
+                sessionId,
+                rowNumber: failed + success,
+                sourceData: row,
+                status: "error",
+                errorMessage: "Missing required fields",
+              });
+            }
+            continue;
+          }
+
+          // Find or create client
+          let client = await storage.findClientByName(clientName);
+          if (!client) {
+            client = await storage.createClient({
+              name: clientName,
+              email: row.clientEmail?.trim() || null,
+              phone: row.clientPhone?.trim() || null,
+              address: siteAddress,
+              clientType: "public",
+            });
+          }
+
+          // Create lead first if it doesn't exist
+          const lead = await storage.createLead({
+            clientId: client.id,
+            siteAddress,
+            source: source === "servicem8" ? "other" : "direct_job",
+            leadType: "public",
+            jobFulfillmentType: "supply_install",
+            description: row.description?.trim() || "Imported quote",
+            stage: "quote_sent",
+          });
+
+          // Create quote
+          const quote = await storage.createQuote({
+            leadId: lead.id,
+            clientId: client.id,
+            totalPrice: String(totalPrice),
+            status: row.status || "draft",
+            validUntil: row.validUntil ? new Date(row.validUntil) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+            description: row.description?.trim() || null,
+            terms: row.terms?.trim() || null,
+          });
+
+          // Log successful record
+          if (sessionId) {
+            await db.insert(importRecords).values({
+              sessionId,
+              rowNumber: failed + success,
+              sourceData: row,
+              mappedData: { clientId: client.id, leadId: lead.id, quoteId: quote.id },
+              status: "success",
+              createdEntityId: quote.id,
+              createdEntityType: "quote",
+            });
+          }
+
+          success++;
+        } catch (err: any) {
+          failed++;
+          errors.push(`Failed to import quote for ${row.clientName || 'unknown'} - ${err.message || ''}`);
+
+          if (sessionId) {
+            await db.insert(importRecords).values({
+              sessionId,
+              rowNumber: failed + success,
+              sourceData: row,
+              status: "error",
+              errorMessage: err.message || "Unknown error",
+            });
+          }
+        }
+      }
+
+      // Update session status
+      if (sessionId) {
+        await db.update(importSessions)
+          .set({
+            status: failed > 0 && success > 0 ? "completed_with_errors" : failed > 0 ? "failed" : "completed",
+            processedRows: success + failed,
+            successCount: success,
+            errorCount: failed,
+            errorLog: errors.length > 0 ? errors : null,
+            completedAt: new Date(),
+          })
+          .where(eq(importSessions.id, sessionId));
+      }
+
+      res.json({ success, failed, errors });
+    } catch (error) {
+      console.error("Error importing quotes:", error);
+      res.status(500).json({ error: "Failed to import quotes" });
+    }
+  });
+
+  // Import Payments
+  app.post("/api/import/payments", async (req, res) => {
+    try {
+      const { data, source = "csv_upload" } = req.body;
+      if (!Array.isArray(data)) {
+        return res.status(400).json({ error: "Data must be an array" });
+      }
+
+      let success = 0;
+      let failed = 0;
+      const errors: string[] = [];
+
+      // Create import session
+      const session = await db.insert(importSessions).values({
+        source: source as any,
+        entityType: "payments",
+        status: "processing",
+        totalRows: data.length,
+        importedBy: (req as any).user?.id || null,
+        startedAt: new Date(),
+      }).returning();
+
+      const sessionId = session[0]?.id;
+
+      for (const row of data) {
+        try {
+          const clientName = row.clientName?.trim();
+          const amount = parseFloat(row.amount);
+          const paymentDate = row.paymentDate;
+
+          if (!clientName || isNaN(amount) || !paymentDate) {
+            errors.push(`Row missing required fields: clientName=${clientName || 'missing'}, amount=${amount || 'missing'}, date=${paymentDate || 'missing'}`);
+            failed++;
+
+            if (sessionId) {
+              await db.insert(importRecords).values({
+                sessionId,
+                rowNumber: failed + success,
+                sourceData: row,
+                status: "error",
+                errorMessage: "Missing required fields",
+              });
+            }
+            continue;
+          }
+
+          // Find client by name
+          let client = await storage.findClientByName(clientName);
+          if (!client) {
+            // Create client if doesn't exist
+            client = await storage.createClient({
+              name: clientName,
+              clientType: "public",
+            });
+          }
+
+          // Try to find job by external ID or job number if provided
+          let jobId = null;
+          if (row.jobId) {
+            const jobs = await storage.getJobs();
+            const matchingJob = jobs.find((j: any) =>
+              j.id === row.jobId ||
+              j.jobNumber === row.jobId ||
+              j.externalId === row.jobId
+            );
+            if (matchingJob) {
+              jobId = matchingJob.id;
+            }
+          }
+
+          // Map payment method
+          const paymentMethodMap: Record<string, string> = {
+            "bank": "bank_transfer",
+            "bank_transfer": "bank_transfer",
+            "card": "stripe",
+            "stripe": "stripe",
+            "credit_card": "stripe",
+            "cash": "cash",
+            "cheque": "cheque",
+            "check": "cheque",
+          };
+          const paymentMethod = paymentMethodMap[row.paymentMethod?.toLowerCase()] || "bank_transfer";
+
+          // Map payment type
+          const paymentTypeMap: Record<string, string> = {
+            "deposit": "deposit",
+            "final": "final",
+            "full": "final",
+            "refund": "refund",
+            "credit": "credit_note",
+            "adjustment": "adjustment",
+          };
+          const paymentType = paymentTypeMap[row.paymentType?.toLowerCase()] || "deposit";
+
+          // Create payment
+          const payment = await storage.createPayment({
+            clientId: client.id,
+            jobId,
+            amount: String(amount),
+            paymentType: paymentType as any,
+            paymentMethod: paymentMethod as any,
+            status: "completed",
+            reference: row.reference?.trim() || null,
+            notes: row.notes?.trim() || `Imported from ${source}`,
+            paidAt: new Date(paymentDate),
+          });
+
+          // Log successful record
+          if (sessionId) {
+            await db.insert(importRecords).values({
+              sessionId,
+              rowNumber: failed + success,
+              sourceData: row,
+              mappedData: { clientId: client.id, jobId, paymentId: payment.id },
+              status: "success",
+              createdEntityId: payment.id,
+              createdEntityType: "payment",
+            });
+          }
+
+          success++;
+        } catch (err: any) {
+          failed++;
+          errors.push(`Failed to import payment for ${row.clientName || 'unknown'} - ${err.message || ''}`);
+
+          if (sessionId) {
+            await db.insert(importRecords).values({
+              sessionId,
+              rowNumber: failed + success,
+              sourceData: row,
+              status: "error",
+              errorMessage: err.message || "Unknown error",
+            });
+          }
+        }
+      }
+
+      // Update session status
+      if (sessionId) {
+        await db.update(importSessions)
+          .set({
+            status: failed > 0 && success > 0 ? "completed_with_errors" : failed > 0 ? "failed" : "completed",
+            processedRows: success + failed,
+            successCount: success,
+            errorCount: failed,
+            errorLog: errors.length > 0 ? errors : null,
+            completedAt: new Date(),
+          })
+          .where(eq(importSessions.id, sessionId));
+      }
+
+      res.json({ success, failed, errors });
+    } catch (error) {
+      console.error("Error importing payments:", error);
+      res.status(500).json({ error: "Failed to import payments" });
+    }
+  });
+
+  // Get Import Sessions (history)
+  app.get("/api/import/sessions", async (req, res) => {
+    try {
+      const sessions = await db.select()
+        .from(importSessions)
+        .orderBy(desc(importSessions.createdAt))
+        .limit(50);
+      res.json(sessions);
+    } catch (error) {
+      console.error("Error fetching import sessions:", error);
+      res.status(500).json({ error: "Failed to fetch import sessions" });
+    }
+  });
+
+  // Get Import Session Details
+  app.get("/api/import/sessions/:id", async (req, res) => {
+    try {
+      const [session] = await db.select()
+        .from(importSessions)
+        .where(eq(importSessions.id, req.params.id));
+
+      if (!session) {
+        return res.status(404).json({ error: "Import session not found" });
+      }
+
+      const records = await db.select()
+        .from(importRecords)
+        .where(eq(importRecords.sessionId, req.params.id))
+        .orderBy(importRecords.rowNumber);
+
+      res.json({ ...session, records });
+    } catch (error) {
+      console.error("Error fetching import session:", error);
+      res.status(500).json({ error: "Failed to fetch import session" });
+    }
+  });
+
+  // ==========================================
+  // EMAIL SYSTEM
+  // ==========================================
+
+  // Get all email accounts
+  app.get("/api/email/accounts", async (req, res) => {
+    try {
+      const accounts = await db.select({
+        id: emailAccounts.id,
+        name: emailAccounts.name,
+        emailAddress: emailAccounts.emailAddress,
+        accountType: emailAccounts.accountType,
+        isActive: emailAccounts.isActive,
+        signature: emailAccounts.signature,
+        lastSyncAt: emailAccounts.lastSyncAt,
+        createdAt: emailAccounts.createdAt,
+      })
+        .from(emailAccounts)
+        .orderBy(emailAccounts.name);
+      res.json(accounts);
+    } catch (error) {
+      console.error("Error fetching email accounts:", error);
+      res.status(500).json({ error: "Failed to fetch email accounts" });
+    }
+  });
+
+  // Create email account
+  app.post("/api/email/accounts", requireRoles("admin"), async (req, res) => {
+    try {
+      const { name, emailAddress, accountType, smtpHost, smtpPort, smtpUsername, smtpPassword,
+        imapHost, imapPort, imapUsername, imapPassword, sendgridApiKey, useSSL, signature } = req.body;
+
+      if (!name || !emailAddress || !accountType) {
+        return res.status(400).json({ error: "Name, email address, and account type are required" });
+      }
+
+      const [account] = await db.insert(emailAccounts).values({
+        name,
+        emailAddress,
+        accountType,
+        smtpHost: smtpHost || null,
+        smtpPort: smtpPort || null,
+        smtpUsername: smtpUsername || null,
+        smtpPassword: smtpPassword || null,
+        imapHost: imapHost || null,
+        imapPort: imapPort || null,
+        imapUsername: imapUsername || null,
+        imapPassword: imapPassword || null,
+        sendgridApiKey: sendgridApiKey || null,
+        useSSL: useSSL !== false,
+        signature: signature || null,
+        isActive: true,
+      }).returning();
+
+      res.json(account);
+    } catch (error: any) {
+      console.error("Error creating email account:", error);
+      if (error.code === '23505') {
+        return res.status(400).json({ error: "Email address already exists" });
+      }
+      res.status(500).json({ error: "Failed to create email account" });
+    }
+  });
+
+  // Update email account
+  app.patch("/api/email/accounts/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const [account] = await db.update(emailAccounts)
+        .set({
+          ...req.body,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailAccounts.id, req.params.id))
+        .returning();
+
+      if (!account) {
+        return res.status(404).json({ error: "Email account not found" });
+      }
+
+      res.json(account);
+    } catch (error) {
+      console.error("Error updating email account:", error);
+      res.status(500).json({ error: "Failed to update email account" });
+    }
+  });
+
+  // Delete email account
+  app.delete("/api/email/accounts/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      await db.delete(emailAccounts).where(eq(emailAccounts.id, req.params.id));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting email account:", error);
+      res.status(500).json({ error: "Failed to delete email account" });
+    }
+  });
+
+  // Get email threads (like SMS conversations)
+  app.get("/api/email/threads", async (req, res) => {
+    try {
+      const { accountId, clientId, resolved } = req.query;
+
+      let query = db.select()
+        .from(emailThreads)
+        .orderBy(desc(emailThreads.lastMessageAt));
+
+      const threads = await query;
+
+      // Filter in memory for now (can optimize with where clauses later)
+      let filtered = threads;
+      if (accountId) {
+        filtered = filtered.filter(t => t.accountId === accountId);
+      }
+      if (clientId) {
+        filtered = filtered.filter(t => t.clientId === clientId);
+      }
+      if (resolved === 'true') {
+        filtered = filtered.filter(t => t.isResolved);
+      } else if (resolved === 'false') {
+        filtered = filtered.filter(t => !t.isResolved);
+      }
+
+      res.json(filtered);
+    } catch (error) {
+      console.error("Error fetching email threads:", error);
+      res.status(500).json({ error: "Failed to fetch email threads" });
+    }
+  });
+
+  // Get unread email count
+  app.get("/api/email/unread-count", async (req, res) => {
+    try {
+      const threads = await db.select()
+        .from(emailThreads)
+        .where(eq(emailThreads.isResolved, false));
+
+      const totalUnread = threads.reduce((sum, t) => sum + (t.unreadCount || 0), 0);
+      res.json({ count: totalUnread });
+    } catch (error) {
+      console.error("Error fetching unread count:", error);
+      res.status(500).json({ error: "Failed to fetch unread count" });
+    }
+  });
+
+  // Get single email thread with messages
+  app.get("/api/email/threads/:id", async (req, res) => {
+    try {
+      const [thread] = await db.select()
+        .from(emailThreads)
+        .where(eq(emailThreads.id, req.params.id));
+
+      if (!thread) {
+        return res.status(404).json({ error: "Thread not found" });
+      }
+
+      const messages = await db.select()
+        .from(emails)
+        .where(eq(emails.threadId, req.params.id))
+        .orderBy(emails.createdAt);
+
+      res.json({ ...thread, messages });
+    } catch (error) {
+      console.error("Error fetching email thread:", error);
+      res.status(500).json({ error: "Failed to fetch email thread" });
+    }
+  });
+
+  // Send email
+  app.post("/api/email/send", async (req, res) => {
+    try {
+      const { accountId, to, cc, bcc, subject, bodyHtml, bodyText, threadId, clientId, leadId, jobId, quoteId } = req.body;
+
+      if (!accountId || !to || !subject) {
+        return res.status(400).json({ error: "Account, recipient, and subject are required" });
+      }
+
+      // Get the email account
+      const [account] = await db.select()
+        .from(emailAccounts)
+        .where(eq(emailAccounts.id, accountId));
+
+      if (!account) {
+        return res.status(404).json({ error: "Email account not found" });
+      }
+
+      // Create or get thread
+      let thread;
+      if (threadId) {
+        [thread] = await db.select()
+          .from(emailThreads)
+          .where(eq(emailThreads.id, threadId));
+      }
+
+      if (!thread) {
+        // Create new thread
+        [thread] = await db.insert(emailThreads).values({
+          accountId,
+          subject,
+          participantEmails: Array.isArray(to) ? to : [to],
+          clientId: clientId || null,
+          leadId: leadId || null,
+          jobId: jobId || null,
+          quoteId: quoteId || null,
+          lastMessageAt: new Date(),
+        }).returning();
+      }
+
+      // Create the email record
+      const [email] = await db.insert(emails).values({
+        threadId: thread.id,
+        accountId,
+        fromEmail: account.emailAddress,
+        fromName: account.name,
+        toEmails: Array.isArray(to) ? to : [to],
+        ccEmails: cc ? (Array.isArray(cc) ? cc : [cc]) : null,
+        bccEmails: bcc ? (Array.isArray(bcc) ? bcc : [bcc]) : null,
+        subject,
+        bodyHtml: bodyHtml || null,
+        bodyText: bodyText || null,
+        status: "queued",
+        isOutbound: true,
+        sentBy: (req as any).user?.id || null,
+      }).returning();
+
+      // TODO: Actually send email via SMTP or SendGrid
+      // For now, we'll mark it as sent
+      await db.update(emails)
+        .set({
+          status: "sent",
+          sentAt: new Date(),
+        })
+        .where(eq(emails.id, email.id));
+
+      // Update thread last message time
+      await db.update(emailThreads)
+        .set({ lastMessageAt: new Date() })
+        .where(eq(emailThreads.id, thread.id));
+
+      res.json({ success: true, emailId: email.id, threadId: thread.id });
+    } catch (error) {
+      console.error("Error sending email:", error);
+      res.status(500).json({ error: "Failed to send email" });
+    }
+  });
+
+  // Mark email thread as read
+  app.post("/api/email/threads/:id/mark-read", async (req, res) => {
+    try {
+      await db.update(emailThreads)
+        .set({ unreadCount: 0 })
+        .where(eq(emailThreads.id, req.params.id));
+
+      await db.update(emails)
+        .set({ isRead: true, readAt: new Date() })
+        .where(eq(emails.threadId, req.params.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking thread as read:", error);
+      res.status(500).json({ error: "Failed to mark thread as read" });
+    }
+  });
+
+  // Resolve/unresolve email thread
+  app.post("/api/email/threads/:id/resolve", async (req, res) => {
+    try {
+      const { resolved } = req.body;
+
+      await db.update(emailThreads)
+        .set({
+          isResolved: resolved !== false,
+          resolvedAt: resolved !== false ? new Date() : null,
+          resolvedBy: resolved !== false ? (req as any).user?.id || null : null,
+        })
+        .where(eq(emailThreads.id, req.params.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error resolving thread:", error);
+      res.status(500).json({ error: "Failed to resolve thread" });
+    }
+  });
+
+  // Link email thread to entity (client, job, quote, lead)
+  app.post("/api/email/threads/:id/link", async (req, res) => {
+    try {
+      const { clientId, jobId, quoteId, leadId } = req.body;
+
+      await db.update(emailThreads)
+        .set({
+          clientId: clientId || null,
+          jobId: jobId || null,
+          quoteId: quoteId || null,
+          leadId: leadId || null,
+        })
+        .where(eq(emailThreads.id, req.params.id));
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error linking thread:", error);
+      res.status(500).json({ error: "Failed to link thread" });
+    }
+  });
+
+  // Get email templates
+  app.get("/api/email/templates", async (req, res) => {
+    try {
+      const templates = await db.select()
+        .from(emailTemplates)
+        .where(eq(emailTemplates.isActive, true))
+        .orderBy(emailTemplates.name);
+      res.json(templates);
+    } catch (error) {
+      console.error("Error fetching email templates:", error);
+      res.status(500).json({ error: "Failed to fetch email templates" });
+    }
+  });
+
+  // Create email template
+  app.post("/api/email/templates", requireRoles("admin"), async (req, res) => {
+    try {
+      const { name, subject, bodyHtml, bodyText, category, accountType, variables } = req.body;
+
+      if (!name || !subject || !bodyHtml) {
+        return res.status(400).json({ error: "Name, subject, and body are required" });
+      }
+
+      const [template] = await db.insert(emailTemplates).values({
+        name,
+        subject,
+        bodyHtml,
+        bodyText: bodyText || null,
+        category: category || null,
+        accountType: accountType || null,
+        variables: variables || null,
+        isActive: true,
+        createdBy: (req as any).user?.id || null,
+      }).returning();
+
+      res.json(template);
+    } catch (error) {
+      console.error("Error creating email template:", error);
+      res.status(500).json({ error: "Failed to create email template" });
+    }
+  });
+
+  // Update email template
+  app.patch("/api/email/templates/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      const [template] = await db.update(emailTemplates)
+        .set({
+          ...req.body,
+          updatedAt: new Date(),
+        })
+        .where(eq(emailTemplates.id, req.params.id))
+        .returning();
+
+      if (!template) {
+        return res.status(404).json({ error: "Template not found" });
+      }
+
+      res.json(template);
+    } catch (error) {
+      console.error("Error updating email template:", error);
+      res.status(500).json({ error: "Failed to update email template" });
+    }
+  });
+
+  // Delete email template
+  app.delete("/api/email/templates/:id", requireRoles("admin"), async (req, res) => {
+    try {
+      await db.update(emailTemplates)
+        .set({ isActive: false })
+        .where(eq(emailTemplates.id, req.params.id));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting email template:", error);
+      res.status(500).json({ error: "Failed to delete email template" });
     }
   });
 

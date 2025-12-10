@@ -2427,11 +2427,275 @@ export const receiptSubmissions = pgTable("receipt_submissions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-export const insertReceiptSubmissionSchema = createInsertSchema(receiptSubmissions).omit({ 
-  id: true, 
+export const insertReceiptSubmissionSchema = createInsertSchema(receiptSubmissions).omit({
+  id: true,
   createdAt: true,
   updatedAt: true
 }).partial({ photoUrl: true, imageUrl: true });
 
 export type InsertReceiptSubmission = z.infer<typeof insertReceiptSubmissionSchema>;
 export type ReceiptSubmission = typeof receiptSubmissions.$inferSelect;
+
+// ==================== DATA IMPORT/MIGRATION SYSTEM ====================
+
+// Import status enum
+export const importStatusEnum = pgEnum("import_status", [
+  "pending",
+  "processing",
+  "completed",
+  "completed_with_errors",
+  "failed"
+]);
+
+// Import source enum (where data came from)
+export const importSourceEnum = pgEnum("import_source", [
+  "servicem8",
+  "csv_upload",
+  "excel_upload",
+  "quickbooks",
+  "xero",
+  "manual"
+]);
+
+// Import entity type enum
+export const importEntityTypeEnum = pgEnum("import_entity_type", [
+  "clients",
+  "jobs",
+  "quotes",
+  "payments",
+  "leads",
+  "products"
+]);
+
+// Import Sessions - tracks each import operation
+export const importSessions = pgTable("import_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  source: importSourceEnum("source").notNull(),
+  entityType: importEntityTypeEnum("entity_type").notNull(),
+  status: importStatusEnum("status").notNull().default("pending"),
+  fileName: text("file_name"),
+  totalRows: integer("total_rows").notNull().default(0),
+  processedRows: integer("processed_rows").notNull().default(0),
+  successCount: integer("success_count").notNull().default(0),
+  errorCount: integer("error_count").notNull().default(0),
+  skippedCount: integer("skipped_count").notNull().default(0),
+  fieldMapping: jsonb("field_mapping"), // Maps source fields to our fields
+  errorLog: jsonb("error_log"), // Array of errors with row numbers
+  importedBy: varchar("imported_by").references(() => users.id),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Import Records - detailed log of each imported record
+export const importRecords = pgTable("import_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => importSessions.id).notNull(),
+  rowNumber: integer("row_number").notNull(),
+  sourceData: jsonb("source_data").notNull(), // Original data from source
+  mappedData: jsonb("mapped_data"), // Data after field mapping
+  status: text("status").notNull(), // "success", "error", "skipped", "duplicate"
+  errorMessage: text("error_message"),
+  createdEntityId: varchar("created_entity_id"), // ID of created client/job/etc
+  createdEntityType: text("created_entity_type"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// ServiceM8 Field Mappings - configurable field mappings for ServiceM8 imports
+export const servicem8FieldMappings = pgTable("servicem8_field_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  entityType: importEntityTypeEnum("entity_type").notNull(),
+  servicem8Field: text("servicem8_field").notNull(),
+  probuildField: text("probuild_field").notNull(),
+  transformFunction: text("transform_function"), // Optional JS function for data transformation
+  defaultValue: text("default_value"),
+  isRequired: boolean("is_required").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertImportSessionSchema = createInsertSchema(importSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertImportRecordSchema = createInsertSchema(importRecords).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertServicem8FieldMappingSchema = createInsertSchema(servicem8FieldMappings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertImportSession = z.infer<typeof insertImportSessionSchema>;
+export type ImportSession = typeof importSessions.$inferSelect;
+
+export type InsertImportRecord = z.infer<typeof insertImportRecordSchema>;
+export type ImportRecord = typeof importRecords.$inferSelect;
+
+export type InsertServicem8FieldMapping = z.infer<typeof insertServicem8FieldMappingSchema>;
+export type Servicem8FieldMapping = typeof servicem8FieldMappings.$inferSelect;
+
+// ==================== EMAIL SYSTEM ====================
+
+// Email account type enum
+export const emailAccountTypeEnum = pgEnum("email_account_type", [
+  "team",      // Main team email for general comms
+  "accounts",  // Accounts/finance email
+  "sales",     // Sales-specific email
+  "support"    // Support/customer service
+]);
+
+// Email status enum
+export const emailStatusEnum = pgEnum("email_status", [
+  "draft",
+  "queued",
+  "sent",
+  "delivered",
+  "failed",
+  "received"
+]);
+
+// Email Accounts - configured email accounts for the business
+export const emailAccounts = pgTable("email_accounts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(), // e.g., "Team Email", "Accounts"
+  emailAddress: text("email_address").notNull().unique(),
+  accountType: emailAccountTypeEnum("account_type").notNull(),
+  smtpHost: text("smtp_host"),
+  smtpPort: integer("smtp_port"),
+  smtpUsername: text("smtp_username"),
+  smtpPassword: text("smtp_password"), // Should be encrypted in production
+  imapHost: text("imap_host"),
+  imapPort: integer("imap_port"),
+  imapUsername: text("imap_username"),
+  imapPassword: text("imap_password"), // Should be encrypted in production
+  sendgridApiKey: text("sendgrid_api_key"), // Alternative: use SendGrid
+  useSSL: boolean("use_ssl").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true),
+  signature: text("signature"), // Email signature HTML
+  lastSyncAt: timestamp("last_sync_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+// Email Threads - like SMS conversations, tracks email threads
+export const emailThreads = pgTable("email_threads", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  accountId: varchar("account_id").references(() => emailAccounts.id).notNull(),
+  subject: text("subject").notNull(),
+  participantEmails: text("participant_emails").array(), // All email addresses in thread
+  clientId: varchar("client_id").references(() => clients.id),
+  leadId: varchar("lead_id").references(() => leads.id),
+  jobId: varchar("job_id").references(() => jobs.id),
+  quoteId: varchar("quote_id").references(() => quotes.id),
+  assignedTo: varchar("assigned_to").references(() => users.id),
+  isResolved: boolean("is_resolved").notNull().default(false),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by").references(() => users.id),
+  lastMessageAt: timestamp("last_message_at").notNull().defaultNow(),
+  unreadCount: integer("unread_count").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Emails - individual email messages
+export const emails = pgTable("emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  threadId: varchar("thread_id").references(() => emailThreads.id).notNull(),
+  accountId: varchar("account_id").references(() => emailAccounts.id).notNull(),
+  messageId: text("message_id"), // Email Message-ID header for threading
+  inReplyTo: text("in_reply_to"), // In-Reply-To header
+  references: text("references"), // References header (for threading)
+  fromEmail: text("from_email").notNull(),
+  fromName: text("from_name"),
+  toEmails: text("to_emails").array().notNull(),
+  ccEmails: text("cc_emails").array(),
+  bccEmails: text("bcc_emails").array(),
+  subject: text("subject").notNull(),
+  bodyHtml: text("body_html"),
+  bodyText: text("body_text"),
+  status: emailStatusEnum("status").notNull().default("draft"),
+  isOutbound: boolean("is_outbound").notNull().default(true),
+  isRead: boolean("is_read").notNull().default(false),
+  readAt: timestamp("read_at"),
+  sentAt: timestamp("sent_at"),
+  receivedAt: timestamp("received_at"),
+  errorMessage: text("error_message"),
+  sendgridMessageId: text("sendgrid_message_id"),
+  sentBy: varchar("sent_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Email Attachments
+export const emailAttachments = pgTable("email_attachments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  emailId: varchar("email_id").references(() => emails.id).notNull(),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(),
+  fileSize: integer("file_size"),
+  fileUrl: text("file_url").notNull(),
+  contentId: text("content_id"), // For inline images
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+// Email Templates - pre-built templates for common emails
+export const emailTemplates = pgTable("email_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  subject: text("subject").notNull(),
+  bodyHtml: text("body_html").notNull(),
+  bodyText: text("body_text"),
+  category: text("category"), // quote, invoice, job_update, general
+  accountType: emailAccountTypeEnum("account_type"), // Which account type this is for
+  variables: text("variables").array(), // Available merge variables
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertEmailAccountSchema = createInsertSchema(emailAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertEmailThreadSchema = createInsertSchema(emailThreads).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertEmailSchema = createInsertSchema(emails).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertEmailAttachmentSchema = createInsertSchema(emailAttachments).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type InsertEmailAccount = z.infer<typeof insertEmailAccountSchema>;
+export type EmailAccount = typeof emailAccounts.$inferSelect;
+
+export type InsertEmailThread = z.infer<typeof insertEmailThreadSchema>;
+export type EmailThread = typeof emailThreads.$inferSelect;
+
+export type InsertEmail = z.infer<typeof insertEmailSchema>;
+export type Email = typeof emails.$inferSelect;
+
+export type InsertEmailAttachment = z.infer<typeof insertEmailAttachmentSchema>;
+export type EmailAttachment = typeof emailAttachments.$inferSelect;
+
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
+export type EmailTemplate = typeof emailTemplates.$inferSelect;

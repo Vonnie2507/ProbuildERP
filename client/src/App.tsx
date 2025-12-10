@@ -24,6 +24,7 @@ import Schedule from "@/pages/Schedule";
 import Inventory from "@/pages/Inventory";
 import Payments from "@/pages/Payments";
 import Messages from "@/pages/Messages";
+import Email from "@/pages/Email";
 import QuoteAnalytics from "@/pages/QuoteAnalytics";
 import AutomationCampaigns from "@/pages/AutomationCampaigns";
 import Installer from "@/pages/Installer";
@@ -283,6 +284,13 @@ function AuthenticatedRouter() {
         <ProtectedRoute path="/messages">
           <MainLayout>
             <Messages />
+          </MainLayout>
+        </ProtectedRoute>
+      </Route>
+      <Route path="/email">
+        <ProtectedRoute path="/email">
+          <MainLayout>
+            <Email />
           </MainLayout>
         </ProtectedRoute>
       </Route>

@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,9 +8,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { 
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
+import {
   Upload, Download, FileSpreadsheet, Users, ClipboardList, Briefcase,
-  CheckCircle2, AlertCircle, Loader2, X, FileText, Package
+  CheckCircle2, AlertCircle, Loader2, X, FileText, Package,
+  History, Settings2, FileJson, DollarSign, Receipt
 } from "lucide-react";
 
 interface ParsedRow {
@@ -24,6 +29,98 @@ interface ImportResult {
   failed: number;
   errors: string[];
 }
+
+interface ImportSession {
+  id: string;
+  source: string;
+  entityType: string;
+  status: string;
+  fileName: string | null;
+  totalRows: number;
+  successCount: number;
+  errorCount: number;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+// ServiceM8 field mapping - maps ServiceM8 export fields to Probuild fields
+const servicem8FieldMappings: Record<string, Record<string, string>> = {
+  clients: {
+    "Company Name": "name",
+    "company_name": "name",
+    "First Name": "name",
+    "first_name": "name",
+    "Last Name": "name", // Will be combined with first name
+    "last_name": "name",
+    "Email": "email",
+    "email": "email",
+    "Mobile": "phone",
+    "mobile": "phone",
+    "Phone": "phone",
+    "phone": "phone",
+    "Address": "address",
+    "address": "address",
+    "Billing Address": "address",
+    "billing_address": "address",
+    "ABN": "abn",
+    "abn": "abn",
+    "Type": "clientType",
+    "type": "clientType",
+  },
+  jobs: {
+    "Job No": "externalId",
+    "job_no": "externalId",
+    "Company Name": "clientName",
+    "company_name": "clientName",
+    "Site Address": "siteAddress",
+    "site_address": "siteAddress",
+    "Job Address": "siteAddress",
+    "job_address": "siteAddress",
+    "Status": "status",
+    "status": "status",
+    "Description": "notes",
+    "description": "notes",
+    "Job Type": "jobType",
+    "job_type": "jobType",
+    "Category": "fenceStyle",
+    "category": "fenceStyle",
+    "Total": "totalPrice",
+    "total": "totalPrice",
+  },
+  quotes: {
+    "Quote No": "externalId",
+    "quote_no": "externalId",
+    "Company Name": "clientName",
+    "company_name": "clientName",
+    "Contact Name": "clientName",
+    "Site Address": "siteAddress",
+    "site_address": "siteAddress",
+    "Description": "description",
+    "description": "description",
+    "Total": "totalPrice",
+    "total": "totalPrice",
+    "Status": "status",
+    "status": "status",
+    "Valid Until": "validUntil",
+    "valid_until": "validUntil",
+  },
+  payments: {
+    "Date": "paymentDate",
+    "date": "paymentDate",
+    "Amount": "amount",
+    "amount": "amount",
+    "Job No": "jobId",
+    "job_no": "jobId",
+    "Invoice No": "invoiceNumber",
+    "invoice_no": "invoiceNumber",
+    "Method": "paymentMethod",
+    "method": "paymentMethod",
+    "Reference": "reference",
+    "reference": "reference",
+    "Notes": "notes",
+    "notes": "notes",
+  }
+};
 
 // CSV Template definitions
 const clientTemplate = {
@@ -54,17 +151,31 @@ const productsTemplate = {
   description: "Import products and inventory items. Categories: fencing, gates, hardware, accessories, other",
 };
 
+const quoteTemplate = {
+  headers: ["clientName", "clientEmail", "siteAddress", "description", "totalPrice", "validUntil", "status"],
+  example: ["Jane Smith", "jane@example.com", "45 Beach Rd, Perth WA", "Front fence quote", "5500.00", "2024-02-15", "sent"],
+  required: ["clientName", "siteAddress", "totalPrice"],
+  description: "Import quotes from ServiceM8 or other systems",
+};
+
+const paymentTemplate = {
+  headers: ["jobId", "clientName", "amount", "paymentDate", "paymentMethod", "paymentType", "reference", "notes"],
+  example: ["JOB-001", "John Smith", "2500.00", "2024-01-15", "bank_transfer", "deposit", "REF123", "50% deposit"],
+  required: ["clientName", "amount", "paymentDate"],
+  description: "Import payment history from ServiceM8",
+};
+
 function parseCSV(csvText: string): string[][] {
   const lines = csvText.split(/\r?\n/).filter(line => line.trim());
   return lines.map(line => {
     const result: string[] = [];
     let current = "";
     let inQuotes = false;
-    
+
     for (let i = 0; i < line.length; i++) {
       const char = line[i];
       const nextChar = line[i + 1];
-      
+
       if (char === '"') {
         if (inQuotes && nextChar === '"') {
           current += '"';
@@ -102,20 +213,41 @@ function normalizeHeader(header: string): string {
     "tradeprice": "tradePrice",
     "stockonhand": "stockOnHand",
     "reorderpoint": "reorderPoint",
+    "totalprice": "totalPrice",
+    "validuntil": "validUntil",
+    "paymentdate": "paymentDate",
+    "paymentmethod": "paymentMethod",
+    "paymenttype": "paymentType",
+    "invoicenumber": "invoiceNumber",
   };
   const lower = header.toLowerCase().replace(/\s+/g, "");
   return mapping[lower] || lower;
 }
 
-function downloadTemplate(type: "clients" | "leads" | "jobs" | "products") {
-  const templates = { clients: clientTemplate, leads: leadTemplate, jobs: jobTemplate, products: productsTemplate };
+function applyServiceM8Mapping(header: string, entityType: string): string {
+  const mappings = servicem8FieldMappings[entityType];
+  if (mappings && mappings[header]) {
+    return mappings[header];
+  }
+  return normalizeHeader(header);
+}
+
+function downloadTemplate(type: "clients" | "leads" | "jobs" | "products" | "quotes" | "payments") {
+  const templates = {
+    clients: clientTemplate,
+    leads: leadTemplate,
+    jobs: jobTemplate,
+    products: productsTemplate,
+    quotes: quoteTemplate,
+    payments: paymentTemplate
+  };
   const template = templates[type];
-  
+
   const csvContent = [
     template.headers.join(","),
     template.example.join(","),
   ].join("\n");
-  
+
   const blob = new Blob([csvContent], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -125,24 +257,30 @@ function downloadTemplate(type: "clients" | "leads" | "jobs" | "products") {
   URL.revokeObjectURL(url);
 }
 
-function ImportTab({ 
-  type, 
-  template, 
-  icon: Icon 
-}: { 
-  type: "clients" | "leads" | "jobs" | "products"; 
+function ImportTab({
+  type,
+  template,
+  icon: Icon,
+  isServiceM8 = false
+}: {
+  type: "clients" | "leads" | "jobs" | "products" | "quotes" | "payments";
   template: typeof clientTemplate;
   icon: typeof Users;
+  isServiceM8?: boolean;
 }) {
   const { toast } = useToast();
   const [file, setFile] = useState<File | null>(null);
   const [parsedData, setParsedData] = useState<ParsedRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [importSource, setImportSource] = useState<string>(isServiceM8 ? "servicem8" : "csv_upload");
 
   const importMutation = useMutation({
-    mutationFn: async (data: Record<string, string>[]) => {
-      const response = await apiRequest("POST", `/api/import/${type}`, { data });
+    mutationFn: async (data: { records: Record<string, string>[]; source: string }) => {
+      const response = await apiRequest("POST", `/api/import/${type}`, {
+        data: data.records,
+        source: data.source
+      });
       return response.json();
     },
     onSuccess: (result: ImportResult) => {
@@ -151,6 +289,7 @@ function ImportTab({
         description: `Successfully imported ${result.success} ${type}. ${result.failed > 0 ? `${result.failed} failed.` : ""}`,
       });
       queryClient.invalidateQueries({ queryKey: [`/api/${type}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/import/sessions"] });
       if (type === "leads") {
         queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       }
@@ -191,7 +330,7 @@ function ImportTab({
     reader.onload = (event) => {
       const text = event.target?.result as string;
       const rows = parseCSV(text);
-      
+
       if (rows.length < 2) {
         toast({
           title: "Invalid File",
@@ -201,8 +340,13 @@ function ImportTab({
         return;
       }
 
-      const rawHeaders = rows[0].map(h => h.toLowerCase().replace(/\s+/g, ""));
-      const normalizedHeaders = rawHeaders.map(normalizeHeader);
+      const rawHeaders = rows[0];
+      // Apply ServiceM8 mapping if enabled
+      const normalizedHeaders = rawHeaders.map(h =>
+        importSource === "servicem8"
+          ? applyServiceM8Mapping(h, type)
+          : normalizeHeader(h)
+      );
       setHeaders(normalizedHeaders);
 
       const dataRows = rows.slice(1);
@@ -213,6 +357,15 @@ function ImportTab({
         normalizedHeaders.forEach((header, i) => {
           data[header] = row[i] || "";
         });
+
+        // Handle ServiceM8 first name + last name combination
+        if (importSource === "servicem8" && type === "clients") {
+          const firstNameIdx = rawHeaders.findIndex(h => h.toLowerCase().includes("first"));
+          const lastNameIdx = rawHeaders.findIndex(h => h.toLowerCase().includes("last"));
+          if (firstNameIdx >= 0 && lastNameIdx >= 0) {
+            data.name = `${row[firstNameIdx] || ""} ${row[lastNameIdx] || ""}`.trim();
+          }
+        }
 
         // Validate required fields
         template.required.forEach(field => {
@@ -229,7 +382,7 @@ function ImportTab({
     };
 
     reader.readAsText(selectedFile);
-  }, [template, toast]);
+  }, [template, toast, importSource, type]);
 
   const validRows = parsedData.filter(row => row.errors.length === 0);
   const invalidRows = parsedData.filter(row => row.errors.length > 0);
@@ -244,7 +397,10 @@ function ImportTab({
       return;
     }
 
-    importMutation.mutate(validRows.map(row => row.data));
+    importMutation.mutate({
+      records: validRows.map(row => row.data),
+      source: importSource
+    });
   };
 
   return (
@@ -254,10 +410,33 @@ function ImportTab({
           <CardTitle className="flex items-center gap-2">
             <Icon className="h-5 w-5" />
             Import {type.charAt(0).toUpperCase() + type.slice(1)}
+            {isServiceM8 && (
+              <Badge variant="secondary" className="ml-2">
+                <FileJson className="h-3 w-3 mr-1" />
+                ServiceM8 Compatible
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription>{template.description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Import Source Selection */}
+          <div className="flex items-center gap-4">
+            <Label>Import Source:</Label>
+            <Select value={importSource} onValueChange={setImportSource}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="servicem8">ServiceM8 Export</SelectItem>
+                <SelectItem value="csv_upload">Standard CSV</SelectItem>
+                <SelectItem value="excel_upload">Excel Export</SelectItem>
+                <SelectItem value="quickbooks">QuickBooks</SelectItem>
+                <SelectItem value="xero">Xero</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* Template Download */}
           <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/50">
             <div className="flex items-center gap-3">
@@ -265,12 +444,15 @@ function ImportTab({
               <div>
                 <p className="font-medium">Download Template</p>
                 <p className="text-sm text-muted-foreground">
-                  Start with our CSV template to ensure correct formatting
+                  {importSource === "servicem8"
+                    ? "Or use your ServiceM8 export directly - we'll map the fields automatically"
+                    : "Start with our CSV template to ensure correct formatting"
+                  }
                 </p>
               </div>
             </div>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => downloadTemplate(type)}
               data-testid={`button-download-${type}-template`}
             >
@@ -278,6 +460,25 @@ function ImportTab({
               Download
             </Button>
           </div>
+
+          {/* ServiceM8 Field Mapping Info */}
+          {importSource === "servicem8" && (
+            <Alert>
+              <FileJson className="h-4 w-4" />
+              <AlertTitle>ServiceM8 Auto-Mapping</AlertTitle>
+              <AlertDescription>
+                We automatically map ServiceM8 fields to Probuild fields. Supported mappings:
+                <ul className="mt-2 text-sm list-disc list-inside">
+                  {Object.entries(servicem8FieldMappings[type] || {}).slice(0, 5).map(([sm8, pb]) => (
+                    <li key={sm8}>{sm8} → {pb}</li>
+                  ))}
+                  {Object.keys(servicem8FieldMappings[type] || {}).length > 5 && (
+                    <li>...and more</li>
+                  )}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Required Fields Info */}
           <Alert>
@@ -303,7 +504,7 @@ function ImportTab({
                 id={`file-upload-${type}`}
                 data-testid={`input-file-${type}`}
               />
-              <label 
+              <label
                 htmlFor={`file-upload-${type}`}
                 className="cursor-pointer flex flex-col items-center gap-2"
               >
@@ -320,6 +521,7 @@ function ImportTab({
                   <FileSpreadsheet className="h-5 w-5 text-primary" />
                   <span className="font-medium">{file?.name}</span>
                   <Badge variant="secondary">{parsedData.length} rows</Badge>
+                  <Badge variant="outline">{importSource}</Badge>
                 </div>
                 <Button variant="ghost" size="icon" onClick={resetState}>
                   <X className="h-4 w-4" />
@@ -360,8 +562,8 @@ function ImportTab({
                     </thead>
                     <tbody>
                       {parsedData.slice(0, 50).map((row, index) => (
-                        <tr 
-                          key={index} 
+                        <tr
+                          key={index}
                           className={`border-t ${row.errors.length > 0 ? "bg-destructive/5" : ""}`}
                         >
                           <td className="p-2">{row.rowNumber}</td>
@@ -403,7 +605,7 @@ function ImportTab({
                 <Button variant="outline" onClick={resetState}>
                   Cancel
                 </Button>
-                <Button 
+                <Button
                   onClick={handleImport}
                   disabled={validRows.length === 0 || importMutation.isPending}
                   data-testid={`button-import-${type}`}
@@ -429,18 +631,170 @@ function ImportTab({
   );
 }
 
+function ImportHistoryTab() {
+  const { data: sessions, isLoading } = useQuery<ImportSession[]>({
+    queryKey: ["/api/import/sessions"],
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "completed":
+        return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
+      case "completed_with_errors":
+        return <Badge className="bg-yellow-100 text-yellow-800">Completed with Errors</Badge>;
+      case "failed":
+        return <Badge variant="destructive">Failed</Badge>;
+      case "processing":
+        return <Badge className="bg-blue-100 text-blue-800">Processing</Badge>;
+      default:
+        return <Badge variant="secondary">Pending</Badge>;
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <History className="h-5 w-5" />
+          Import History
+        </CardTitle>
+        <CardDescription>View all past import sessions and their results</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        ) : !sessions || sessions.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <p>No import history yet</p>
+            <p className="text-sm">Your import sessions will appear here</p>
+          </div>
+        ) : (
+          <ScrollArea className="h-[400px]">
+            <table className="w-full">
+              <thead className="sticky top-0 bg-background">
+                <tr className="border-b">
+                  <th className="p-3 text-left font-medium">Date</th>
+                  <th className="p-3 text-left font-medium">Source</th>
+                  <th className="p-3 text-left font-medium">Type</th>
+                  <th className="p-3 text-left font-medium">File</th>
+                  <th className="p-3 text-left font-medium">Status</th>
+                  <th className="p-3 text-left font-medium">Results</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((session) => (
+                  <tr key={session.id} className="border-b hover:bg-muted/50">
+                    <td className="p-3 text-sm">
+                      {new Date(session.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="p-3">
+                      <Badge variant="outline" className="capitalize">
+                        {session.source.replace("_", " ")}
+                      </Badge>
+                    </td>
+                    <td className="p-3 capitalize">{session.entityType}</td>
+                    <td className="p-3 text-sm text-muted-foreground">
+                      {session.fileName || "-"}
+                    </td>
+                    <td className="p-3">{getStatusBadge(session.status)}</td>
+                    <td className="p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-green-600">{session.successCount} success</span>
+                        {session.errorCount > 0 && (
+                          <span className="text-destructive">{session.errorCount} errors</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollArea>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ServiceM8MappingTab() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Settings2 className="h-5 w-5" />
+          ServiceM8 Field Mapping
+        </CardTitle>
+        <CardDescription>
+          Configure how ServiceM8 fields map to Probuild fields
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue="clients" className="w-full">
+          <TabsList>
+            <TabsTrigger value="clients">Clients</TabsTrigger>
+            <TabsTrigger value="jobs">Jobs</TabsTrigger>
+            <TabsTrigger value="quotes">Quotes</TabsTrigger>
+            <TabsTrigger value="payments">Payments</TabsTrigger>
+          </TabsList>
+
+          {Object.entries(servicem8FieldMappings).map(([entity, mappings]) => (
+            <TabsContent key={entity} value={entity} className="mt-4">
+              <div className="border rounded-lg">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-muted">
+                      <th className="p-3 text-left font-medium">ServiceM8 Field</th>
+                      <th className="p-3 text-left font-medium">Probuild Field</th>
+                      <th className="p-3 text-left font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(mappings).map(([sm8Field, pbField]) => (
+                      <tr key={sm8Field} className="border-b">
+                        <td className="p-3 font-mono text-sm">{sm8Field}</td>
+                        <td className="p-3 font-mono text-sm">{pbField}</td>
+                        <td className="p-3">
+                          <Badge variant="outline" className="text-green-600 border-green-600">
+                            Active
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+
+        <Alert className="mt-4">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Custom Mappings Coming Soon</AlertTitle>
+          <AlertDescription>
+            Soon you'll be able to add custom field mappings for your specific ServiceM8 setup.
+            For now, the default mappings cover the most common ServiceM8 export formats.
+          </AlertDescription>
+        </Alert>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Import() {
   return (
     <div className="p-6 space-y-6" data-testid="page-import">
       <div>
-        <h1 className="text-2xl font-semibold">Import Data</h1>
+        <h1 className="text-2xl font-semibold">Import Center</h1>
         <p className="text-muted-foreground">
-          Bulk import your existing clients, leads, jobs, and products from CSV files
+          Migrate data from ServiceM8, CSV files, or other systems into Probuild
         </p>
       </div>
 
       <Tabs defaultValue="clients" className="w-full">
-        <TabsList className="grid w-full grid-cols-4 max-w-lg">
+        <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="clients" data-testid="tab-import-clients">
             <Users className="h-4 w-4 mr-2" />
             Clients
@@ -453,26 +807,58 @@ export default function Import() {
             <Briefcase className="h-4 w-4 mr-2" />
             Jobs
           </TabsTrigger>
+          <TabsTrigger value="quotes" data-testid="tab-import-quotes">
+            <Receipt className="h-4 w-4 mr-2" />
+            Quotes
+          </TabsTrigger>
+          <TabsTrigger value="payments" data-testid="tab-import-payments">
+            <DollarSign className="h-4 w-4 mr-2" />
+            Payments
+          </TabsTrigger>
           <TabsTrigger value="products" data-testid="tab-import-products">
             <Package className="h-4 w-4 mr-2" />
             Products
           </TabsTrigger>
+          <TabsTrigger value="history" data-testid="tab-import-history">
+            <History className="h-4 w-4 mr-2" />
+            History
+          </TabsTrigger>
+          <TabsTrigger value="mapping" data-testid="tab-import-mapping">
+            <Settings2 className="h-4 w-4 mr-2" />
+            Field Mapping
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="clients" className="mt-6">
-          <ImportTab type="clients" template={clientTemplate} icon={Users} />
+          <ImportTab type="clients" template={clientTemplate} icon={Users} isServiceM8 />
         </TabsContent>
 
         <TabsContent value="leads" className="mt-6">
-          <ImportTab type="leads" template={leadTemplate} icon={ClipboardList} />
+          <ImportTab type="leads" template={leadTemplate} icon={ClipboardList} isServiceM8 />
         </TabsContent>
 
         <TabsContent value="jobs" className="mt-6">
-          <ImportTab type="jobs" template={jobTemplate} icon={Briefcase} />
+          <ImportTab type="jobs" template={jobTemplate} icon={Briefcase} isServiceM8 />
+        </TabsContent>
+
+        <TabsContent value="quotes" className="mt-6">
+          <ImportTab type="quotes" template={quoteTemplate} icon={Receipt} isServiceM8 />
+        </TabsContent>
+
+        <TabsContent value="payments" className="mt-6">
+          <ImportTab type="payments" template={paymentTemplate} icon={DollarSign} isServiceM8 />
         </TabsContent>
 
         <TabsContent value="products" className="mt-6">
           <ImportTab type="products" template={productsTemplate} icon={Package} />
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-6">
+          <ImportHistoryTab />
+        </TabsContent>
+
+        <TabsContent value="mapping" className="mt-6">
+          <ServiceM8MappingTab />
         </TabsContent>
       </Tabs>
     </div>
