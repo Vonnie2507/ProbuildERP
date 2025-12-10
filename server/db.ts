@@ -16,9 +16,10 @@ if (!process.env.DATABASE_URL) {
 console.log("✅ DATABASE_URL is set, attempting to connect...");
 console.log("Database host:", new URL(process.env.DATABASE_URL).hostname);
 
-export const pool = new Pool({ 
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   connectionTimeoutMillis: 10000, // 10 second timeout
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
 export const db = drizzle({ client: pool, schema });
